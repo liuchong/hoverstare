@@ -24,7 +24,14 @@ permissions:
   statuses: write
 
 concurrency:
-  group: hoverstare-${{ github.event.pull_request.number || github.event.issue.number }}
+  # 不含 @hoverstare 的评论事件给独立组名，避免无意义的 run 取消正在跑的审查
+  group: >-
+    hoverstare-${{
+      (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment')
+      && !contains(github.event.comment.body, '@hoverstare')
+      && format('noop-{0}', github.event.comment.id)
+      || (github.event.pull_request.number || github.event.issue.number)
+    }}
   cancel-in-progress: true
 
 jobs:
