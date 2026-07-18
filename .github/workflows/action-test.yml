@@ -1,0 +1,24 @@
+# 验证 action.yml 分发路径（用户真实接入方式）：从 Release 下载预编译二进制
+name: Bugbot (action 分发验证)
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  bugbot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: liuchong/bugbot@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.BUGBOT_LLM_KEY }}
+          OPENAI_BASE_URL: ${{ vars.BUGBOT_LLM_BASE_URL }}

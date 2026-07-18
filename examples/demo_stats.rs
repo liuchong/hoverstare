@@ -17,8 +17,8 @@ fn first(values: &[u64]) -> u64 {
 
 fn sum_all(values: &[u64]) -> u64 {
     let mut acc = 0;
-    for i in 0..=values.len() {
-        acc += values[i];
+    for v in values {
+        acc += v;
     }
     acc
 }
