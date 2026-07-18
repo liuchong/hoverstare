@@ -33,9 +33,13 @@ runs:
         esac
         echo "target=$target" >> "$GITHUB_OUTPUT"
 
+    # 显式固定 Actions token：create-github-app-token 会替换后续步骤的
+    # github.token 上下文（App token 无 cache 写权限，post-cache 会报 warning）
     - name: Cache hoverstare binary
       id: cache
       uses: actions/cache@v4
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
       with:
         path: ${{ runner.temp }}/hoverstare-bin
         key: hoverstare-${{ inputs.version }}-${{ steps.platform.outputs.target }}

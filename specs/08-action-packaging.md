@@ -59,6 +59,9 @@ inputs：
   换 installation token 再运行——评论以 `hoverstare[bot]` 品牌身份发布
   （默认 `GITHUB_TOKEN` 只能以 `github-actions[bot]` 发布），且 App token 不受
   `resolveReviewThread` 平台限制（spec 07 的完整 resolve 路径，无需 GH_PAT）。
+  注意：create-github-app-token 会替换后续步骤的 `github.token` 上下文，
+  因此 cache 步骤显式固定 `GITHUB_TOKEN: ${{ github.token }}`（App token 无
+  cache 写权限，否则 post-cache 报 warning——实测踩坑）。
 
 步骤：
 
