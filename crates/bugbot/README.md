@@ -1,23 +1,42 @@
-# bugbot → 已更名为 [hoverstare](https://github.com/liuchong/hoverstare)
+# bugbot 🐛
 
-本 crate 已更名为 **`hoverstare`**，请迁移：
+Repo-aware AI code review for GitHub pull requests.
 
-```toml
-# 旧
-bugbot = "0.0.1"
-# 新
-hoverstare = "0.0.1"
-```
+Bugbot reviews PRs like a human reviewer would: it reads your repository with
+read-only tools (`read_file` / `grep` / `glob` / `show_base_file`), verifies
+suspicions before reporting, votes across multiple independent review passes,
+and posts precise inline comments — then tracks each finding across commits
+until it's fixed.
 
-`cargo install` 用户：
+## Install
 
 ```bash
-# 旧
 cargo install bugbot
-# 新
-cargo install hoverstare
 ```
 
-本包仅为向后兼容保留：库 API 全部 re-export 自 `hoverstare`，
-二进制行为与 `hoverstare` 完全一致。后续功能更新都在
-[hoverstare](https://crates.io/crates/hoverstare) 上进行。
+## Usage
+
+```bash
+# Review a PR inside GitHub Actions (or locally with --repo/--pr)
+bugbot review
+
+# Handle @bugbot comment commands
+bugbot mention
+```
+
+## Documentation
+
+- Setup guide (GitHub Action, configuration, FAQ):
+  [github.com/liuchong/hoverstare](https://github.com/liuchong/hoverstare)
+- Design specs:
+  [specs/](https://github.com/liuchong/hoverstare/tree/master/specs)
+
+## Note
+
+`bugbot` is published together with
+[`hoverstare`](https://crates.io/crates/hoverstare) — the two packages share
+the same codebase and behave identically; use whichever name you prefer.
+
+## License
+
+[1PL — One Public License](https://license.pub/1pl/)

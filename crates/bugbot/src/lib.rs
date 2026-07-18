@@ -1,14 +1,9 @@
-//! # bugbot（已更名）
+//! # bugbot
 //!
-//! **本 crate 已更名为 [`hoverstare`](https://crates.io/crates/hoverstare)，
-//! 请迁移。** 本包仅作为向后兼容的薄别名保留：库 API 全部 re-export 自
-//! `hoverstare`，二进制行为与 `hoverstare` 完全一致。
+//! Repo-aware AI code review for GitHub pull requests.
 //!
-//! ```toml
-//! # 旧
-//! bugbot = "0.0.1"
-//! # 新
-//! hoverstare = "0.0.1"
-//! ```
+//! 本包与 [`hoverstare`](https://crates.io/crates/hoverstare) 共享同一份代码，
+//! 库 API 与二进制行为完全一致——两个名字任选其一使用即可。
+//! 文档见 <https://github.com/liuchong/hoverstare>。
 
 pub use hoverstare::*;

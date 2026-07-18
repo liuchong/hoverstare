@@ -1,8 +1,8 @@
 [package]
 name = "bugbot"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
-description = "RENAMED to `hoverstare` — this crate is now a thin alias kept for backward compatibility. Please migrate: https://github.com/liuchong/hoverstare"
+description = "Repo-aware AI code review bot for GitHub PRs: agentic multi-pass review with voting, precise inline comments, incremental finding tracking"
 repository = "https://github.com/liuchong/hoverstare"
 homepage = "https://github.com/liuchong/hoverstare"
 documentation = "https://github.com/liuchong/hoverstare/tree/master/specs"
