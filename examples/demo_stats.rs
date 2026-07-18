@@ -12,7 +12,7 @@ fn average(values: &[u64]) -> u64 {
 }
 
 fn first(values: &[u64]) -> u64 {
-    *values.iter().next().unwrap()
+    *values.first().unwrap_or(&0)
 }
 
 fn sum_all(values: &[u64]) -> u64 {
