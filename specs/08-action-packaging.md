@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # show_base_file 需要 base 分支历史
-      - uses: liuchong/hoverstare@v0
+      - uses: liuchong/hoverstare@v0.0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -81,8 +81,11 @@ inputs：
    首个 release 实测踩坑，2026-07-18 修正）；
 2. `cargo build --release --target x86_64-unknown-linux-musl`，`strip`；
 3. 产物打包 + `sha256sum`（`.sha256` 只含哈希值，action 侧拼 `hash  filename` 校验）；
-4. `softprops/action-gh-release` 创建 Release 并上传产物；
-5. 大版本 tag（`v0`）force-move 到最新 `v0.x.y`（用户侧 `@v0` 自动跟进修复版）。
+4. `softprops/action-gh-release` 创建 Release 并上传产物。
+
+> 版本引用纪律（2026-07 修正）：**不使用浮动大版本 tag**（如 `v0`）——可变 tag
+> 破坏可复现性且有供应链风险；用户一律 pin 精确版本（如 `@v0.0.5`），
+> action.yml 的默认 version 输入与最新 release 同步更新。
 
 ## 版本与兼容性
 

@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: liuchong/hoverstare@v0
+      - uses: liuchong/hoverstare@v0.0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.HOVERSTARE_LLM_KEY }}
@@ -166,7 +166,7 @@ instructions = ""                     # фокус ревью команды, д
 3. Передайте:
 
 ```yaml
-      - uses: liuchong/hoverstare@v0
+      - uses: liuchong/hoverstare@v0.0.5
         with:
           app_id: ${{ secrets.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}

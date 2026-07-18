@@ -42,25 +42,3 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
-
-  # 大版本浮动 tag（如 v0 指向最新 v0.x.y），用户侧 @v0 自动跟进修复版
-  move-major-tag:
-    needs: build-musl
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Move major tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          version="${GITHUB_REF_NAME}"
-          major="${version%%.*}"
-          if [ "$major" = "$version" ]; then
-            echo "非 x.y.z 形式 tag，跳过"
-            exit 0
-          fi
-          git tag -fa "$major" -m "move $major to $version"
-          git push -f origin "$major"

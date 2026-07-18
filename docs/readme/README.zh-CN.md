@@ -104,7 +104,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: liuchong/hoverstare@v0
+      - uses: liuchong/hoverstare@v0.0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.HOVERSTARE_LLM_KEY }}
@@ -155,7 +155,7 @@ instructions = ""                     # 团队特定关注点，注入系统提�
 3. 传入：
 
 ```yaml
-      - uses: liuchong/hoverstare@v0
+      - uses: liuchong/hoverstare@v0.0.5
         with:
           app_id: ${{ secrets.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
