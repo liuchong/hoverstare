@@ -6,7 +6,8 @@
 
 ## 触发
 
-`issue_comment: created` 事件 → `bugbot mention`：
+`issue_comment: created`（PR 会话评论）或 `pull_request_review_comment: created`
+（review 线程回复，explain 的主场景）事件 → `bugbot mention`：
 
 1. 评论 body 含 `@bugbot` 才处理，否则 exit 0；
 2. 所在 issue 必须是 PR（`issue.pull_request` 字段存在），纯 issue v1 不处理；
