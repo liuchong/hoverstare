@@ -158,7 +158,10 @@ mod tests {
         let body = "issue description\n<!-- hoverstare-finding:0123456789abcdef -->\n\n---\n\nanother one\n<!-- hoverstare-finding:fedcba9876543210 -->";
         let fps = extract_fingerprints(body);
         assert_eq!(fps, vec!["0123456789abcdef", "fedcba9876543210"]);
-        assert_eq!(strip_markers(body), "issue description\n\n\n---\n\nanother one");
+        assert_eq!(
+            strip_markers(body),
+            "issue description\n\n\n---\n\nanother one"
+        );
         // invalid content is not extracted
         assert!(extract_fingerprints("<!-- hoverstare-finding:not-hex! -->").is_empty());
         assert!(extract_fingerprints("no markers").is_empty());

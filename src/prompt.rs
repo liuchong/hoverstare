@@ -6,6 +6,7 @@
 use crate::config::Config;
 use crate::diff::ParsedDiff;
 use crate::i18n::Lang;
+use crate::instructions::RepoInstructions;
 use crate::state::OpenFinding;
 
 /// Output-language directive appended to prompts.
@@ -18,7 +19,8 @@ fn output_language_directive(lang: Lang) -> String {
 }
 
 /// System prompt: the fixed contract (spec 04).
-pub fn system_prompt(cfg: &Config) -> String {
+/// `instructions`：仓库指令文件（spec 04 §repo-instructions），附加在不可覆盖核心规则之后。
+pub fn system_prompt(cfg: &Config, instructions: &RepoInstructions) -> String {
     let mut s = String::from(
         r#"You are a senior software engineer performing a focused defect review of a GitHub pull request.
 
@@ -49,6 +51,7 @@ Your final reply MUST be exactly one JSON object: no prose, no explanation, no m
         s.push_str("\n\n[TEAM-SPECIFIC FOCUS]\n");
         s.push_str(cfg.instructions.trim());
     }
+    s.push_str(&instructions.render());
     s.push_str(&output_language_directive(cfg.language));
     s
 }

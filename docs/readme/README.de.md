@@ -150,9 +150,23 @@ timeout_secs = 900
 review_drafts = false
 fail_closed = false                   # true → Analysefehler lassen CI fehlschlagen
 status_checks = false                 # hoverstare / hoverstare-findings Checks schreiben
+language = "en"        # Ausgabesprache: en/zh-CN/ru/fr/de/es
 set_temperature = true                # false für Endpoints, die nur Standard-Temperatur akzeptieren
 instructions = ""                     # team-spezifischer Review-Fokus, wird in den Systemprompt injiziert
 ```
+
+## Repository-Anweisungen
+
+HoverStare liest Regeldateien des Repos und wendet sie auf Reviews an
+(sie ergänzen, überschreiben aber niemals die eingebauten Kernregeln). Priorität:
+
+1. `hoverstare.md` / `.hoverstare.md` / `.hoverstare/*.md` / `.github/hoverstare.md`
+2. `AGENTS.md`
+3. `.github/copilot-instructions.md`, `CLAUDE.md`, `.cursorrules`
+
+Dateien werden **aus dem Basis-Branch** gelesen (ein PR, der AGENTS.md ändert,
+kann keine Anweisungen einschleusen). Kern-Sicherheitsregeln (Read-only-Tools,
+gezielte Verifikation, nur Defekte, JSON-Vertrag) sind nicht überschreibbar.
 
 ## Optional: Markenidentität (Veröffentlichung als eigener Bot)
 

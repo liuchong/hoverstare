@@ -269,7 +269,9 @@ impl GitHubClient {
             // PRs with >300 files are rejected by the diff endpoint (406) ->
             // fall back to reassembling via the files API (spec 02)
             Err(GitHubError::Api { status: 406, .. }) => {
-                tracing::warn!("diff endpoint returned 406 (too many files), falling back to files API pagination");
+                tracing::warn!(
+                    "diff endpoint returned 406 (too many files), falling back to files API pagination"
+                );
                 self.fetch_diff_via_files_api(repo, number).await
             }
             Err(e) => Err(e),
@@ -286,7 +288,10 @@ impl GitHubClient {
         let mut out = String::new();
         for f in &files {
             let Some(patch) = &f.patch else {
-                tracing::warn!("file {} has no patch (binary or too large), skipped", f.filename);
+                tracing::warn!(
+                    "file {} has no patch (binary or too large), skipped",
+                    f.filename
+                );
                 continue;
             };
             out.push_str(&format!("diff --git a/{0} b/{0}\n", f.filename));

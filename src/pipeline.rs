@@ -14,6 +14,7 @@ use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::config::Config;
 use crate::diff::ParsedDiff;
 use crate::findings::{self, AnalysisResult, Finding};
+use crate::instructions::RepoInstructions;
 use crate::prompt::{self, ReviewMode};
 
 /// Full-analysis retry count (spec 04 output fault-tolerance pipeline, level 5)
@@ -68,6 +69,7 @@ pub struct PipelineStats {
     pub dropped: usize,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     backend: &dyn AgentBackend,
     cfg: &Config,
@@ -76,6 +78,7 @@ pub async fn run(
     truncated_files: &[String],
     shared: &Arc<ToolShared>,
     mode: &ReviewMode<'_>,
+    instructions: &RepoInstructions,
 ) -> anyhow::Result<PipelineOutcome> {
     let small_diff = parsed.added_line_count() < SMALL_DIFF_ADDED_LINES;
     let passes = if small_diff {
@@ -96,6 +99,7 @@ pub async fn run(
             truncated_files,
             shared,
             mode,
+            instructions,
         )
         .await?;
         return Ok(PipelineOutcome {
@@ -121,6 +125,7 @@ pub async fn run(
                 truncated_files,
                 shared,
                 mode,
+                instructions,
                 &extras[i],
                 cfg.temp(LENSES[i].temp),
             )
@@ -423,11 +428,12 @@ async fn single_shot(
     truncated_files: &[String],
     shared: &Arc<ToolShared>,
     mode: &ReviewMode<'_>,
+    instructions: &RepoInstructions,
     extra_system: &str,
     temperature: Option<f64>,
 ) -> anyhow::Result<AnalysisResult> {
     let req = ReviewRequest {
-        system_prompt: prompt::system_prompt(cfg) + extra_system,
+        system_prompt: prompt::system_prompt(cfg, instructions) + extra_system,
         user_prompt: prompt::user_prompt(diff_text, parsed, cfg, truncated_files, mode),
         tools: ToolRegistry {
             shared: Some(shared.clone()),
@@ -450,6 +456,7 @@ async fn single_shot(
 
 /// Fault-tolerance pipeline (spec 04): analyze -> parse failure -> reformat
 /// pass -> full retry (up to 3 times)
+#[allow(clippy::too_many_arguments)]
 pub async fn analyze_with_backend(
     backend: &dyn AgentBackend,
     cfg: &Config,
@@ -458,12 +465,15 @@ pub async fn analyze_with_backend(
     truncated_files: &[String],
     shared: &Arc<ToolShared>,
     mode: &ReviewMode<'_>,
+    instructions: &RepoInstructions,
 ) -> anyhow::Result<AnalysisResult> {
     let mut last_err: Option<anyhow::Error> = None;
 
     for attempt in 1..=MAX_ANALYSIS_ATTEMPTS {
         if attempt > 1 {
-            tracing::warn!("retrying analysis {attempt}/{MAX_ANALYSIS_ATTEMPTS} (in {RETRY_DELAY:?})");
+            tracing::warn!(
+                "retrying analysis {attempt}/{MAX_ANALYSIS_ATTEMPTS} (in {RETRY_DELAY:?})"
+            );
             tokio::time::sleep(RETRY_DELAY).await;
         }
 
@@ -475,6 +485,7 @@ pub async fn analyze_with_backend(
             truncated_files,
             shared,
             mode,
+            instructions,
         )
         .await
         {
@@ -499,7 +510,9 @@ pub async fn analyze_with_backend(
                         Err(e2) => tracing::warn!("reformat pass failed: {e2}"),
                     }
                 } else {
-                    tracing::warn!("model returned empty output, skipping reformat and retrying directly");
+                    tracing::warn!(
+                        "model returned empty output, skipping reformat and retrying directly"
+                    );
                 }
                 last_err = Some(anyhow::anyhow!(e));
             }
@@ -520,9 +533,10 @@ async fn single_attempt(
     truncated_files: &[String],
     shared: &Arc<ToolShared>,
     mode: &ReviewMode<'_>,
+    instructions: &RepoInstructions,
 ) -> anyhow::Result<crate::agent::ReviewRun> {
     let req = ReviewRequest {
-        system_prompt: prompt::system_prompt(cfg),
+        system_prompt: prompt::system_prompt(cfg, instructions),
         user_prompt: prompt::user_prompt(diff_text, parsed, cfg, truncated_files, mode),
         tools: ToolRegistry {
             shared: Some(shared.clone()),
@@ -616,6 +630,10 @@ mod tests {
                 Err(msg) => Err(AgentError::Backend(msg.to_string())),
             }
         }
+    }
+
+    fn ins() -> crate::instructions::RepoInstructions {
+        crate::instructions::RepoInstructions::empty()
     }
 
     fn shared() -> Arc<ToolShared> {
@@ -731,9 +749,18 @@ mod tests {
         c.verify = false;
         let (parsed, text) = diff_input(100);
         let backend = FakeBackend::new(vec![Ok(r#"{"findings":[],"summary":"clean"}"#)]);
-        let out = run(&backend, &c, &parsed, &text, &[], &shared(), &mode())
-            .await
-            .unwrap();
+        let out = run(
+            &backend,
+            &c,
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await
+        .unwrap();
         assert_eq!(out.stats.passes_run, 1);
         assert_eq!(out.analysis.findings.len(), 0);
     }
@@ -775,9 +802,18 @@ mod tests {
                 r#"{"verdict":"rejected","confidence":0.9,"reason":"误报"}"#,
             )),
         };
-        let out = run(&backend, &c, &parsed, &text, &[], &shared(), &mode())
-            .await
-            .unwrap();
+        let out = run(
+            &backend,
+            &c,
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await
+        .unwrap();
         assert_eq!(out.stats.passes_run, 3);
         assert_eq!(out.stats.voted_in, 1); // common problem voted in with 3 votes
         assert_eq!(out.stats.dropped, 1); // lane-unique problem rejected by the verifier
@@ -799,9 +835,18 @@ mod tests {
             Ok(r#"{"findings":[],"summary":"s2"}"#),
         ]);
         // default verifier output: confirmed 0.9
-        let out = run(&backend, &c, &parsed, &text, &[], &shared(), &mode())
-            .await
-            .unwrap();
+        let out = run(
+            &backend,
+            &c,
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await
+        .unwrap();
         assert_eq!(out.stats.verified_in, 1);
         assert_eq!(out.analysis.findings.len(), 1);
     }
@@ -817,9 +862,18 @@ mod tests {
         let backend = FakeBackend::new(vec![Ok(Box::leak(
             format!(r#"{{"findings":[{unique}],"summary":"s"}}"#).into_boxed_str(),
         ))]);
-        let out = run(&backend, &c, &parsed, &text, &[], &shared(), &mode())
-            .await
-            .unwrap();
+        let out = run(
+            &backend,
+            &c,
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await
+        .unwrap();
         assert_eq!(out.stats.passes_run, 1);
         assert_eq!(out.stats.verified_in, 1);
     }
@@ -831,9 +885,18 @@ mod tests {
         c.verify = false;
         let (parsed, text) = diff_input(100);
         let backend = FakeBackend::new(vec![Err("boom"), Ok(r#"{"findings":[],"summary":"s2"}"#)]);
-        let out = run(&backend, &c, &parsed, &text, &[], &shared(), &mode())
-            .await
-            .unwrap();
+        let out = run(
+            &backend,
+            &c,
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await
+        .unwrap();
         assert_eq!(out.stats.passes_run, 1); // only one lane succeeded
         assert_eq!(out.analysis.summary, "s2");
     }
@@ -845,9 +908,18 @@ mod tests {
         let (parsed, text) = diff_input(100);
         let backend = FakeBackend::new(vec![Err("boom1"), Err("boom2")]);
         assert!(
-            run(&backend, &c, &parsed, &text, &[], &shared(), &mode())
-                .await
-                .is_err()
+            run(
+                &backend,
+                &c,
+                &parsed,
+                &text,
+                &[],
+                &shared(),
+                &mode(),
+                &ins()
+            )
+            .await
+            .is_err()
         );
     }
 
@@ -862,9 +934,18 @@ mod tests {
                 r#"{"findings":[{"file":"a.rs","line":2,"severity":"high","title":"t","description":"d"}],"summary":"s"}"#,
             ),
         ]);
-        let r = analyze_with_backend(&backend, &cfg(), &parsed, &text, &[], &shared(), &mode())
-            .await
-            .unwrap();
+        let r = analyze_with_backend(
+            &backend,
+            &cfg(),
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await
+        .unwrap();
         assert_eq!(r.findings.len(), 1);
         assert_eq!(backend.reformat_calls.load(Ordering::SeqCst), 1);
     }
@@ -873,9 +954,18 @@ mod tests {
     async fn empty_output_retries_without_reformat() {
         let (parsed, text) = diff_input(100);
         let backend = FakeBackend::new(vec![Ok(""), Ok(r#"{"findings":[],"summary":"s"}"#)]);
-        let r = analyze_with_backend(&backend, &cfg(), &parsed, &text, &[], &shared(), &mode())
-            .await
-            .unwrap();
+        let r = analyze_with_backend(
+            &backend,
+            &cfg(),
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await
+        .unwrap();
         assert_eq!(r.findings.len(), 0);
         assert_eq!(backend.calls.load(Ordering::SeqCst), 2);
         assert_eq!(backend.reformat_calls.load(Ordering::SeqCst), 0);
@@ -892,8 +982,17 @@ mod tests {
             Ok("g5"),
             Ok("g6"),
         ]);
-        let r =
-            analyze_with_backend(&backend, &cfg(), &parsed, &text, &[], &shared(), &mode()).await;
+        let r = analyze_with_backend(
+            &backend,
+            &cfg(),
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await;
         assert!(r.is_err());
         assert_eq!(backend.calls.load(Ordering::SeqCst), 6); // 3 main reviews + 3 reformats (FakeBackend counts them together)
     }
@@ -902,9 +1001,18 @@ mod tests {
     async fn backend_error_then_success() {
         let (parsed, text) = diff_input(100);
         let backend = FakeBackend::new(vec![Err("boom"), Ok(r#"{"findings":[],"summary":"s"}"#)]);
-        let r = analyze_with_backend(&backend, &cfg(), &parsed, &text, &[], &shared(), &mode())
-            .await
-            .unwrap();
+        let r = analyze_with_backend(
+            &backend,
+            &cfg(),
+            &parsed,
+            &text,
+            &[],
+            &shared(),
+            &mode(),
+            &ins(),
+        )
+        .await
+        .unwrap();
         assert_eq!(r.findings.len(), 0);
         assert_eq!(backend.calls.load(Ordering::SeqCst), 2);
     }

@@ -50,6 +50,7 @@ src/
 │   └── tools.rs       # 只读工具集（框架无关）+ 路径沙箱 + 预算 + 轨迹
 ├── pipeline.rs        # 多 pass 投票 + verifier + 容错管线（spec 05/04）
 ├── prompt.rs          # 系统提示契约（JSON-only、不可信数据、定点查证）
+├── instructions.rs    # 仓库指令文件加载（base 分支读取，spec 04 §repo-instructions）
 ├── findings.rs        # 三级 JSON 提取 + jsonschema + 归一化
 ├── report.rs          # 锚定降级链、同锚点合并、渲染（spec 06）
 ├── state.rs           # 指纹、标记解析、线程 resolve 规则（spec 07）

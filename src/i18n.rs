@@ -114,7 +114,9 @@ impl T {
             Lang::ZhCn => format!("（另有 {n} 个锁定/生成文件按规则跳过）"),
             Lang::Ru => format!(" (ещё {n} lock/сгенерированных файлов пропущено по правилам)"),
             Lang::Fr => format!(" (plus {n} fichier(s) lock/généré(s) ignoré(s) par les règles)"),
-            Lang::De => format!(" (zusätzlich {n} Lock-/generierte Datei(en) per Regel übersprungen)"),
+            Lang::De => {
+                format!(" (zusätzlich {n} Lock-/generierte Datei(en) per Regel übersprungen)")
+            }
             Lang::Es => format!(" (además {n} archivo(s) lock/generado(s) omitido(s) por reglas)"),
         }
     }
@@ -135,7 +137,9 @@ impl T {
             Lang::En => format!(
                 "{inline} inline comment(s), {cross} cross-file/unanchored finding(s) (threshold: {threshold})."
             ),
-            Lang::ZhCn => format!("共 {inline} 条行内评论、{cross} 条跨文件/未锚定发现（阈值：{threshold}）。"),
+            Lang::ZhCn => format!(
+                "共 {inline} 条行内评论、{cross} 条跨文件/未锚定发现（阈值：{threshold}）。"
+            ),
             Lang::Ru => format!(
                 "Встроенных комментариев: {inline}, межфайловых/непривязанных находок: {cross} (порог: {threshold})."
             ),
@@ -167,7 +171,9 @@ impl T {
             Lang::En => format!(
                 "> ⚠️ *Reported line {orig_line} is not in the diff; anchored to the nearest changed line.*"
             ),
-            Lang::ZhCn => format!("> ⚠️ *模型报告的行为第 {orig_line} 行（不在 diff 中），已吸附到最近的变更行。*"),
+            Lang::ZhCn => format!(
+                "> ⚠️ *模型报告的行为第 {orig_line} 行（不在 diff 中），已吸附到最近的变更行。*"
+            ),
             Lang::Ru => format!(
                 "> ⚠️ *Строка {orig_line} из отчёта не входит в diff; привязано к ближайшей изменённой строке.*"
             ),
@@ -303,10 +309,16 @@ impl T {
         match self.0 {
             Lang::En => format!("Unresolved high-severity findings (new: {new}, open: {open})"),
             Lang::ZhCn => format!("存在未解决的高危发现（新 {new} 条，历史未关闭 {open} 条）"),
-            Lang::Ru => format!("Нерешённые находки высокой важности (новых: {new}, открытых: {open})"),
-            Lang::Fr => format!("Constats de gravité élevée non résolus (nouveaux : {new}, ouverts : {open})"),
+            Lang::Ru => {
+                format!("Нерешённые находки высокой важности (новых: {new}, открытых: {open})")
+            }
+            Lang::Fr => format!(
+                "Constats de gravité élevée non résolus (nouveaux : {new}, ouverts : {open})"
+            ),
             Lang::De => format!("Ungelöste Befunde hoher Schwere (neu: {new}, offen: {open})"),
-            Lang::Es => format!("Hallazgos de gravedad alta sin resolver (nuevos: {new}, abiertos: {open})"),
+            Lang::Es => {
+                format!("Hallazgos de gravedad alta sin resolver (nuevos: {new}, abiertos: {open})")
+            }
         }
     }
 
@@ -341,9 +353,15 @@ impl T {
             Lang::En => format!("Model reported {findings} finding(s), {resolved} marked fixed"),
             Lang::ZhCn => format!("模型报告 {findings} 条 finding，判定已修复 {resolved} 条"),
             Lang::Ru => format!("Модель сообщила находок: {findings}, исправленных: {resolved}"),
-            Lang::Fr => format!("Le modèle a rapporté {findings} constat(s), {resolved} marqué(s) corrigé(s)"),
-            Lang::De => format!("Modell meldete {findings} Befund(e), {resolved} als behoben markiert"),
-            Lang::Es => format!("El modelo reportó {findings} hallazgo(s), {resolved} marcado(s) como corregido(s)"),
+            Lang::Fr => format!(
+                "Le modèle a rapporté {findings} constat(s), {resolved} marqué(s) corrigé(s)"
+            ),
+            Lang::De => {
+                format!("Modell meldete {findings} Befund(e), {resolved} als behoben markiert")
+            }
+            Lang::Es => format!(
+                "El modelo reportó {findings} hallazgo(s), {resolved} marcado(s) como corregido(s)"
+            ),
         }
     }
 
@@ -360,12 +378,22 @@ impl T {
 
     pub fn log_resolved_threads(&self, resolved: usize, replied: usize) -> String {
         match self.0 {
-            Lang::En => format!("Fixed threads handled: {resolved} resolved, {replied} marked via reply"),
+            Lang::En => {
+                format!("Fixed threads handled: {resolved} resolved, {replied} marked via reply")
+            }
             Lang::ZhCn => format!("已修复线程处理：resolve {resolved} 个，降级标记 {replied} 个"),
-            Lang::Ru => format!("Обработано исправленных тредов: resolved {resolved}, отмечено ответом {replied}"),
-            Lang::Fr => format!("Fils corrigés traités : {resolved} résolus, {replied} marqués par réponse"),
-            Lang::De => format!("Behobene Threads: {resolved} aufgelöst, {replied} per Antwort markiert"),
-            Lang::Es => format!("Hilos corregidos: {resolved} resueltos, {replied} marcados por respuesta"),
+            Lang::Ru => format!(
+                "Обработано исправленных тредов: resolved {resolved}, отмечено ответом {replied}"
+            ),
+            Lang::Fr => {
+                format!("Fils corrigés traités : {resolved} résolus, {replied} marqués par réponse")
+            }
+            Lang::De => {
+                format!("Behobene Threads: {resolved} aufgelöst, {replied} per Antwort markiert")
+            }
+            Lang::Es => {
+                format!("Hilos corregidos: {resolved} resueltos, {replied} marcados por respuesta")
+            }
         }
     }
 }

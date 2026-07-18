@@ -147,9 +147,23 @@ timeout_secs = 900
 review_drafts = false
 fail_closed = false                   # true → analysis failures fail CI
 status_checks = false                 # write hoverstare / hoverstare-findings checks
+language = "en"                       # output language: en/zh-CN/ru/fr/de/es
 set_temperature = true                # false for endpoints that only accept default temperature
 instructions = ""                     # team-specific review focus, injected into the system prompt
 ```
+
+## Repository instructions
+
+HoverStare reads repo-level rule files and applies them to reviews (they
+supplement but never override the built-in core rules). Precedence:
+
+1. `hoverstare.md` / `.hoverstare.md` / `.hoverstare/*.md` / `.github/hoverstare.md`
+2. `AGENTS.md`
+3. `.github/copilot-instructions.md`, `CLAUDE.md`, `.cursorrules`
+
+Files are read **from the base branch** (a PR editing AGENTS.md cannot inject
+instructions). Core safety rules (read-only tools, targeted verification,
+defect-only scope, JSON contract) can never be overridden.
 
 ## Optional: brand identity (posts as your own bot)
 

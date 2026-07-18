@@ -69,8 +69,8 @@ pub fn resolve_mention() -> anyhow::Result<Option<MentionEvent>> {
     };
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read GITHUB_EVENT_PATH ({path})"))?;
-    let payload: MentionPayload =
-        serde_json::from_str(&text).with_context(|| format!("failed to parse event payload ({path})"))?;
+    let payload: MentionPayload = serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse event payload ({path})"))?;
     let Some(comment) = payload.comment else {
         return Ok(None);
     };
@@ -120,8 +120,8 @@ fn from_event() -> anyhow::Result<Option<PrRef>> {
     };
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read GITHUB_EVENT_PATH ({path})"))?;
-    let payload: EventPayload =
-        serde_json::from_str(&text).with_context(|| format!("failed to parse event payload ({path})"))?;
+    let payload: EventPayload = serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse event payload ({path})"))?;
     let Some(pr) = payload.pull_request else {
         return Ok(None);
     };

@@ -48,6 +48,8 @@ async fn main() -> anyhow::Result<()> {
 
     let shared = ToolShared::new(cfg.workspace.clone(), &base_ref, cfg.max_tool_calls);
     let mode = prompt::ReviewMode::default();
+    let instructions =
+        hoverstare::instructions::RepoInstructions::load(&cfg.workspace, &base_ref).await;
     let analysis = orchestrator::analyze(
         &cfg,
         &parsed,
@@ -55,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         &truncated.truncated_files,
         &shared,
         &mode,
+        &instructions,
     )
     .await?;
     tracing::info!("model reported {} findings", analysis.findings.len());

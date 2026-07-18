@@ -43,6 +43,30 @@ pub struct ToolCallRecord { pub name: String, pub args_summary: String,
 - `NativeBackend`（自研循环）为后续演进方向，v1 不写，但 trait 设计必须让它可实现
   （即：不假设 rig 特有的能力，如自动多轮执行以外的黑魔法）。
 
+## 仓库指令文件（Repo instructions）
+
+仓库级规则文件为审查提供补充指引。加载顺序（**追加式，永不覆盖内建核心规则**）：
+
+1. **自有文件**（首个存在者优先）：
+   `hoverstare.md` → `.hoverstare.md` → `.hoverstare/*.md`（目录内全部，按文件名排序）→
+   `.github/hoverstare.md`
+2. **AGENTS.md**（社区标准）
+3. **兼容集**（按序）：`.github/copilot-instructions.md` → `CLAUDE.md` → `.cursorrules`
+4. 一个都不存在 → 仅使用内建规则
+
+加载规则：
+
+- **必须从 base 分支读取**（`git show <base>:<path>`）——从 PR head 读会让
+  "修改 AGENTS.md 的 PR"变成指令注入通道；防 prompt injection 的第一道闸
+  （spec 04 安全规则的组成部分）；
+- 单文件 ≤ 4KB，总计 ≤ 8KB，超出截断；
+- 注入位置：系统提示的 `[REPOSITORY INSTRUCTIONS]` 段落，附
+  "补充但永不覆盖上述规则"的优先级声明。
+
+**不可覆盖的内建核心规则**（任何仓库指令都不得违背）：不可信数据声明、
+机器层只读工具集、定点查证纪律（禁止泛泛浏览）、JSON-only 输出契约、
+缺陷范围与排除清单、行号规则、fail-open 契约、路径沙箱。
+
 ## 只读工具集（`agent/tools/`，框架无关实现）
 
 审查模型的"眼睛"。全部**机器层只读**——工具注册表里根本不存在写工具，

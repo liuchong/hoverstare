@@ -76,7 +76,9 @@ pub async fn run_mention(cfg: &Config) -> anyhow::Result<Outcome> {
 /// Handle an already-parsed mention event (reused by serve mode, spec 10)
 pub async fn run_mention_event(cfg: &Config, ev: &MentionEvent) -> anyhow::Result<Outcome> {
     let Some(cmd) = parse_command(&ev.body) else {
-        return Ok(Outcome::Skipped("comment contains no @hoverstare command".into()));
+        return Ok(Outcome::Skipped(
+            "comment contains no @hoverstare command".into(),
+        ));
     };
     let repo = Repo::parse(&ev.repo).map_err(|e| anyhow::anyhow!("{e}"))?;
     let gh = GitHubClient::new(cfg.github_token.clone())?;
@@ -129,9 +131,9 @@ async fn do_review(
         dry_run: false,
     };
     match orchestrator::run_review(cfg, &args, true).await? {
-        Outcome::Published { inline_comments } => {
-            Ok(format!("full re-review complete ({inline_comments} inline comments)"))
-        }
+        Outcome::Published { inline_comments } => Ok(format!(
+            "full re-review complete ({inline_comments} inline comments)"
+        )),
         Outcome::Skipped(r) => Ok(format!("skipped: {r}")),
         Outcome::AnalysisFailed(r) => Err(anyhow::anyhow!("analysis failed: {r}")),
         Outcome::DryRun => Ok("done".to_string()),
@@ -249,7 +251,10 @@ mod tests {
         // @hoverstare inside fenced code blocks is ignored (spec 09)
         assert_eq!(parse_command("```\n@hoverstare review\n```"), None);
         // @hoverstare inside inline code is ignored
-        assert_eq!(parse_command("look at the `@hoverstare review` command"), None);
+        assert_eq!(
+            parse_command("look at the `@hoverstare review` command"),
+            None
+        );
         // normal response outside code blocks
         assert_eq!(
             parse_command("```\nsome code\n```\n@hoverstare review"),

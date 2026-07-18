@@ -8,6 +8,7 @@ pub mod event;
 pub mod findings;
 pub mod github;
 pub mod i18n;
+pub mod instructions;
 pub mod mention;
 pub mod orchestrator;
 pub mod pipeline;

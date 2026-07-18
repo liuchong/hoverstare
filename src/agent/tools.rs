@@ -208,7 +208,9 @@ pub async fn read_file(
     let mut out = String::new();
     for (idx, line) in lines[s - 1..e].iter().enumerate() {
         if idx >= MAX_READ_LINES || out.len() >= MAX_OUTPUT_BYTES {
-            out.push_str(&format!("... [truncated: file has {total} lines, showing {idx}]\n"));
+            out.push_str(&format!(
+                "... [truncated: file has {total} lines, showing {idx}]\n"
+            ));
             break;
         }
         out.push_str(&format!("{:>5}│{line}\n", s + idx));
@@ -290,7 +292,9 @@ pub async fn grep(
             }
             matches += 1;
             if matches >= MAX_GREP_MATCHES || out.len() >= MAX_OUTPUT_BYTES {
-                out.push_str(&format!("... [truncated: showing first {matches} matches]\n"));
+                out.push_str(&format!(
+                    "... [truncated: showing first {matches} matches]\n"
+                ));
                 break 'files;
             }
         }

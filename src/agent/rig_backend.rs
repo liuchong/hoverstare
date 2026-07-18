@@ -77,7 +77,9 @@ impl RigBackend {
                 let client = anthropic::Client::builder()
                     .api_key(key.expose_secret())
                     .build()
-                    .map_err(|e| AgentError::Backend(format!("failed to build anthropic client: {e}")))?;
+                    .map_err(|e| {
+                        AgentError::Backend(format!("failed to build anthropic client: {e}"))
+                    })?;
                 let mut builder = client
                     .agent(&model)
                     .preamble(&sys)
@@ -102,7 +104,9 @@ impl RigBackend {
                     .base_url(base_url)
                     .build()
                     .map_err(|e| {
-                        AgentError::Backend(format!("failed to build openai-compatible client: {e}"))
+                        AgentError::Backend(format!(
+                            "failed to build openai-compatible client: {e}"
+                        ))
                     })?;
                 let mut builder = client
                     .agent(&model)

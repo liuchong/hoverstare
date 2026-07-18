@@ -13,6 +13,7 @@ use crate::event;
 use crate::findings::AnalysisResult;
 use crate::github::{GitHubClient, NewStatus, Repo, StatusState};
 use crate::i18n::T;
+use crate::instructions::RepoInstructions;
 use crate::prompt::ReviewMode;
 use crate::report::{self, ReviewContext};
 use crate::state::{self, OpenFinding};
@@ -81,7 +82,15 @@ async fn skip_outcome(
     head_sha: &str,
     reason: String,
 ) -> Outcome {
-    post_terminal_status(gh, repo, head_sha, cfg, true, &T::new(cfg.language).status_skipped(&reason)).await;
+    post_terminal_status(
+        gh,
+        repo,
+        head_sha,
+        cfg,
+        true,
+        &T::new(cfg.language).status_skipped(&reason),
+    )
+    .await;
     if cfg.status_checks
         && let Err(e) = gh
             .create_status(
@@ -180,7 +189,12 @@ pub async fn run_review(
         let prior = prior_sha.as_deref().unwrap_or_default();
         let delta = match gh.get_compare_diff(&repo, prior, &pr.head.sha).await {
             Ok(d) => d,
-            Err(e) => return fail_or_open(cfg, anyhow::anyhow!("failed to fetch incremental diff: {e}")),
+            Err(e) => {
+                return fail_or_open(
+                    cfg,
+                    anyhow::anyhow!("failed to fetch incremental diff: {e}"),
+                );
+            }
         };
         if delta.trim().is_empty() {
             return Ok(skip_outcome(
@@ -221,7 +235,15 @@ pub async fn run_review(
             ),
         )?;
         if matches!(outcome, Outcome::AnalysisFailed(_)) {
-            post_terminal_status(&gh, &repo, &head_sha, cfg, false, "diff over budget, analysis abandoned").await;
+            post_terminal_status(
+                &gh,
+                &repo,
+                &head_sha,
+                cfg,
+                false,
+                "diff over budget, analysis abandoned",
+            )
+            .await;
         }
         return Ok(outcome);
     }
@@ -252,6 +274,11 @@ pub async fn run_review(
 
     // Analysis (fail-open zone, spec 01 exit-code contract); tool sandbox root =
     // the checked-out workspace
+    //
+    // Load repo instruction files from the base branch (spec 04 §repo-instructions;
+    // never from the PR head — injection protection)
+    let instructions = RepoInstructions::load(&cfg.workspace, &pr.base.ref_name).await;
+
     let t = T::new(cfg.language);
     gha_group_end();
     gha_group("analysis (multi-pass review / voting / verification)");
@@ -263,6 +290,7 @@ pub async fn run_review(
         &truncated_files,
         &shared,
         &mode,
+        &instructions,
     )
     .await
     {
@@ -271,8 +299,15 @@ pub async fn run_review(
             gha_group_end();
             let outcome = fail_or_open(cfg, e.context("analysis failed"))?;
             if matches!(outcome, Outcome::AnalysisFailed(_)) {
-                post_terminal_status(&gh, &repo, &head_sha, cfg, false, "analysis failed (fail-open)")
-                    .await;
+                post_terminal_status(
+                    &gh,
+                    &repo,
+                    &head_sha,
+                    cfg,
+                    false,
+                    "analysis failed (fail-open)",
+                )
+                .await;
             }
             return Ok(outcome);
         }
@@ -327,10 +362,13 @@ pub async fn run_review(
         Ok(_) => true,
         Err(e) => {
             tracing::warn!("review publishing failed ({e}), falling back to a summary comment");
-            let fallback = report::render_fallback_comment(&built.review.body, &analysis.findings, &t);
+            let fallback =
+                report::render_fallback_comment(&built.review.body, &analysis.findings, &t);
             gh.create_issue_comment(&repo, pr_ref.number, &fallback)
                 .await
-                .map_err(|e2| anyhow::anyhow!("both review and fallback comment failed: {e} ; {e2}"))?;
+                .map_err(|e2| {
+                    anyhow::anyhow!("both review and fallback comment failed: {e} ; {e2}")
+                })?;
             false
         }
     };
@@ -395,10 +433,14 @@ async fn resolve_or_reply(
         Ok(()) => ResolveOutcome::Resolved,
         Err(e) => {
             let Some(cid) = comment_id else {
-                tracing::warn!("failed to resolve thread {thread_id} and no comment id available for fallback: {e}");
+                tracing::warn!(
+                    "failed to resolve thread {thread_id} and no comment id available for fallback: {e}"
+                );
                 return ResolveOutcome::Failed;
             };
-            tracing::warn!("resolve unavailable ({e}), falling back to in-thread fixed marker: {thread_id}");
+            tracing::warn!(
+                "resolve unavailable ({e}), falling back to in-thread fixed marker: {thread_id}"
+            );
             match gh
                 .reply_to_review_comment(repo, pr_number, cid, "✅ HoverStare confirmed fixed")
                 .await
@@ -492,7 +534,10 @@ async fn post_status_checks(
             ),
         )
     } else {
-        (StatusState::Success, "No high-severity findings".to_string())
+        (
+            StatusState::Success,
+            "No high-severity findings".to_string(),
+        )
     };
     if let Err(e) = gh
         .create_status(
@@ -519,7 +564,20 @@ pub async fn analyze(
     truncated_files: &[String],
     shared: &Arc<ToolShared>,
     mode: &ReviewMode<'_>,
+    instructions: &RepoInstructions,
 ) -> anyhow::Result<AnalysisResult> {
+    if !instructions.is_empty() {
+        tracing::info!(
+            "loaded {} repo instruction file(s): {}",
+            instructions.sections.len(),
+            instructions
+                .sections
+                .iter()
+                .map(|(l, _)| l.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
     let backend = RigBackend::new(cfg.llm.clone());
     let outcome = crate::pipeline::run(
         &backend,
@@ -529,6 +587,7 @@ pub async fn analyze(
         truncated_files,
         shared,
         mode,
+        instructions,
     )
     .await?;
     let st = &outcome.stats;

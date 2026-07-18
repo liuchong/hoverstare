@@ -224,7 +224,11 @@ fn render_body(
         b.push_str(t.clean_verdict());
         b.push_str("\n\n");
     } else {
-        b.push_str(&t.stats_line(inline_count, cross_cutting.len(), cfg.severity_threshold.as_str()));
+        b.push_str(&t.stats_line(
+            inline_count,
+            cross_cutting.len(),
+            cfg.severity_threshold.as_str(),
+        ));
         b.push_str("\n\n");
     }
 
@@ -321,7 +325,11 @@ mod tests {
         let r = build(&fs, &d);
         assert_eq!(r.comments.len(), 1);
         assert_ne!(r.comments[0].line, 999);
-        assert!(r.comments[0].body.contains("anchored to the nearest changed line"));
+        assert!(
+            r.comments[0]
+                .body
+                .contains("anchored to the nearest changed line")
+        );
     }
 
     #[test]

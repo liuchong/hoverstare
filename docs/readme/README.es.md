@@ -149,9 +149,23 @@ timeout_secs = 900
 review_drafts = false
 fail_closed = false                   # true → los fallos de análisis rompen la CI
 status_checks = false                 # escribir checks hoverstare / hoverstare-findings
+language = "en"        # idioma de salida: en/zh-CN/ru/fr/de/es
 set_temperature = true                # false para endpoints que solo aceptan la temperatura por defecto
 instructions = ""                     # enfoque de revisión del equipo, inyectado en el prompt de sistema
 ```
+
+## Instrucciones del repositorio
+
+HoverStare lee los archivos de reglas del repositorio y los aplica a las revisiones
+(complementan pero nunca anulan las reglas integradas). Prioridad:
+
+1. `hoverstare.md` / `.hoverstare.md` / `.hoverstare/*.md` / `.github/hoverstare.md`
+2. `AGENTS.md`
+3. `.github/copilot-instructions.md`, `CLAUDE.md`, `.cursorrules`
+
+Los archivos se leen **desde la rama base** (un PR que edite AGENTS.md no puede
+inyectar instrucciones). Las reglas de seguridad (herramientas de solo lectura,
+verificación dirigida, solo defectos, contrato JSON) no se pueden anular.
 
 ## Opcional: identidad de marca (publicación como tu propio bot)
 

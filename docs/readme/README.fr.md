@@ -149,9 +149,24 @@ timeout_secs = 900
 review_drafts = false
 fail_closed = false                   # true → les échecs d'analyse font échouer la CI
 status_checks = false                 # écrire les checks hoverstare / hoverstare-findings
+language = "en"        # langue de sortie : en/zh-CN/ru/fr/de/es
 set_temperature = true                # false pour les endpoints n'acceptant que la température par défaut
 instructions = ""                     # focus de revue de l'équipe, injecté dans le prompt système
 ```
+
+## Instructions du dépôt
+
+HoverStare lit les fichiers de règles du dépôt et les applique aux revues
+(ils complètent mais ne remplacent jamais les règles de base). Priorité :
+
+1. `hoverstare.md` / `.hoverstare.md` / `.hoverstare/*.md` / `.github/hoverstare.md`
+2. `AGENTS.md`
+3. `.github/copilot-instructions.md`, `CLAUDE.md`, `.cursorrules`
+
+Les fichiers sont lus **depuis la branche de base** (une PR modifiant
+AGENTS.md ne peut pas injecter d'instructions). Les règles de sécurité de base
+(outils en lecture seule, vérification ciblée, défauts uniquement, contrat JSON)
+ne sont jamais remplacées.
 
 ## Option : identité de marque (publication sous votre bot)
 

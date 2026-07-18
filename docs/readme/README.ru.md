@@ -147,9 +147,23 @@ timeout_secs = 900
 review_drafts = false
 fail_closed = false                   # true — ошибки анализа ломают CI
 status_checks = false                 # писать проверки hoverstare / hoverstare-findings
+language = "en"        # язык вывода: en/zh-CN/ru/fr/de/es
 set_temperature = true                # false для endpoint'ов, принимающих только температуру по умолчанию
 instructions = ""                     # фокус ревью команды, добавляется в системный промпт
 ```
+
+## Инструкции репозитория
+
+HoverStare читает файлы правил репозитория и применяет их к обзорам
+(они дополняют, но никогда не переопределяют встроенные правила). Приоритет:
+
+1. `hoverstare.md` / `.hoverstare.md` / `.hoverstare/*.md` / `.github/hoverstare.md`
+2. `AGENTS.md`
+3. `.github/copilot-instructions.md`, `CLAUDE.md`, `.cursorrules`
+
+Файлы читаются **из базовой ветки** (PR, меняющий AGENTS.md, не может
+внедрить инструкции). Основные правила безопасности (read-only инструменты,
+точечная проверка, только дефекты, JSON-контракт) не переопределяются.
 
 ## Опционально: фирменная личность (публикации от вашего бота)
 

@@ -173,8 +173,8 @@ impl Config {
         if !path.exists() {
             return Ok(TomlConfig::default());
         }
-        let text =
-            std::fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
         toml::from_str(&text).with_context(|| format!("failed to parse {}", path.display()))
     }
 

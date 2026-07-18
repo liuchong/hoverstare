@@ -136,9 +136,22 @@ timeout_secs = 900
 review_drafts = false
 fail_closed = false                   # true 时分析失败会让 CI 失败
 status_checks = false                 # 写 hoverstare / hoverstare-findings 检查
+language = "en"     # 输出语言：en/zh-CN/ru/fr/de/es
 set_temperature = true                # 端点只接受默认温度时置 false
 instructions = ""                     # 团队特定关注点，注入系统提示
 ```
+
+## 仓库指令文件
+
+HoverStare 会读取仓库级规则文件并应用到审查中（补充但永不覆盖内建核心规则）。
+优先级：
+
+1. `hoverstare.md` / `.hoverstare.md` / `.hoverstare/*.md` / `.github/hoverstare.md`
+2. `AGENTS.md`
+3. `.github/copilot-instructions.md`、`CLAUDE.md`、`.cursorrules`
+
+文件**从 base 分支读取**（修改 AGENTS.md 的 PR 无法注入指令）。
+核心安全规则（只读工具、定点查证、缺陷范围、JSON 契约）永不可被覆盖。
 
 ## 可选：品牌身份（以你自己的 bot 发布）
 
