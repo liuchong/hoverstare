@@ -51,18 +51,18 @@ GitHub 拒绝同 `(path, line, side)` 出现两条 inline 评论（422）。
 {替换代码}
 ```
 
-<!-- bugbot-finding:{指纹} -->
+<!-- hoverstare-finding:{指纹} -->
 ```
 
 - emoji：critical 🔴 / high 🟠 / medium 🟡 / low 🔵
 - `suggestion` 代码块仅在该评论锚定行合法且 suggestion 非空时输出；
-- 隐藏标记 `<!-- bugbot-finding:{指纹} -->` 永远在最后一行（spec 07 追踪用）；
+- 隐藏标记 `<!-- hoverstare-finding:{指纹} -->` 永远在最后一行（spec 07 追踪用）；
 - 同锚点合并的多条 finding 各自带标记。
 
 ### review body 格式
 
 ```
-## 🐛 Bugbot Review
+## 🐛 HoverStare Review
 
 **审查范围** — {模式：全量 | 增量（自 {prior_sha_short} 以来）}；{file_count} 个文件，{commit_count} 个提交
 {excluded_files > 0 时一行：另有 N 个生成/锁定文件按规则跳过}
@@ -80,7 +80,7 @@ GitHub 拒绝同 `(path, line, side)` 出现两条 inline 评论（422）。
 ---
 {无 finding 时：✅ 未发现缺陷。}
 
-<!-- bugbot-meta
+<!-- hoverstare-meta
 mode: full|incremental
 head_sha: ...
 base_sha: ...
@@ -90,7 +90,7 @@ findings: [{id, file, line, severity}]
 -->
 ```
 
-- `bugbot-meta` HTML 注释是机器可读状态（spec 07 依赖），对人不可见；
+- `hoverstare-meta` HTML 注释是机器可读状态（spec 07 依赖），对人不可见；
 - body 与 inline 分工：能锚定到行的一律 inline；body 段落只放"无处锚定"的问题
   （缺席型、顺序型、设计决策型、diff 外文件）。
 

@@ -1,16 +1,16 @@
 //! 跨 commit 状态（spec 07）
 //!
 //! 状态全部存在 GitHub 侧（评论里的隐藏标记 + review body 的元数据注释），
-//! bugbot 本身无持久化，天然无状态。
+//! hoverstare 本身无持久化，天然无状态。
 
 use std::collections::BTreeSet;
 
 use sha1::{Digest, Sha1};
 
-/// 行内评论里的隐藏标记前缀：`<!-- bugbot-finding:{fp} -->`
-pub const MARKER_PREFIX: &str = "<!-- bugbot-finding:";
+/// 行内评论里的隐藏标记前缀：`<!-- hoverstare-finding:{fp} -->`
+pub const MARKER_PREFIX: &str = "<!-- hoverstare-finding:";
 /// review body 元数据注释标记
-pub const META_MARKER: &str = "<!-- bugbot-meta";
+pub const META_MARKER: &str = "<!-- hoverstare-meta";
 
 /// finding 指纹：对"哪个文件的哪段代码的什么问题"的稳定标识。
 /// 取行内容而非行号——行号漂移（上方插入新行）不影响指纹稳定性（spec 07）。
@@ -148,18 +148,18 @@ mod tests {
 
     #[test]
     fn extract_and_strip_markers() {
-        let body = "问题描述\n<!-- bugbot-finding:0123456789abcdef -->\n\n---\n\n另一个\n<!-- bugbot-finding:fedcba9876543210 -->";
+        let body = "问题描述\n<!-- hoverstare-finding:0123456789abcdef -->\n\n---\n\n另一个\n<!-- hoverstare-finding:fedcba9876543210 -->";
         let fps = extract_fingerprints(body);
         assert_eq!(fps, vec!["0123456789abcdef", "fedcba9876543210"]);
         assert_eq!(strip_markers(body), "问题描述\n\n\n---\n\n另一个");
         // 非法内容不提取
-        assert!(extract_fingerprints("<!-- bugbot-finding:not-hex! -->").is_empty());
+        assert!(extract_fingerprints("<!-- hoverstare-finding:not-hex! -->").is_empty());
         assert!(extract_fingerprints("无标记").is_empty());
     }
 
     #[test]
     fn parse_meta() {
-        let body = "## Review\n\n<!-- bugbot-meta\nmode: full\nhead_sha: abc123def\nfiles_reviewed: 3\n-->";
+        let body = "## Review\n\n<!-- hoverstare-meta\nmode: full\nhead_sha: abc123def\nfiles_reviewed: 3\n-->";
         assert_eq!(parse_meta_head_sha(body).as_deref(), Some("abc123def"));
         assert_eq!(parse_meta_head_sha("无元数据"), None);
     }

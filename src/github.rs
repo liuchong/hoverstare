@@ -153,7 +153,7 @@ impl GitHubClient {
     ) -> Result<GitHubClient, GitHubError> {
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .user_agent(concat!("bugbot/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("hoverstare/", env!("CARGO_PKG_VERSION")))
             .build()?;
         Ok(GitHubClient {
             http,
@@ -382,7 +382,7 @@ impl GitHubClient {
         Ok(body["id"].as_u64().unwrap_or(0))
     }
 
-    /// 列出 PR 的 reviews（找历史 bugbot review，增量模式判定用）
+    /// 列出 PR 的 reviews（找历史 hoverstare review，增量模式判定用）
     pub async fn list_reviews(
         &self,
         repo: &Repo,

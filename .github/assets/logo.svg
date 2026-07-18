@@ -7,26 +7,44 @@
   </defs>
   <!-- 背景 -->
   <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)"/>
-  <!-- 放大镜圈（评审的隐喻） -->
-  <circle cx="62" cy="60" r="34" fill="none" stroke="#ffffff" stroke-width="7" opacity="0.95"/>
-  <line x1="88" y1="88" x2="104" y2="104" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
-  <!-- 小虫身体 -->
-  <ellipse cx="62" cy="66" rx="13" ry="15" fill="#ffffff"/>
-  <!-- 小虫头 -->
-  <circle cx="62" cy="47" r="8" fill="#ffffff"/>
-  <!-- 虫眼 -->
-  <circle cx="58.5" cy="45" r="1.8" fill="#1a7f37"/>
-  <circle cx="65.5" cy="45" r="1.8" fill="#1a7f37"/>
-  <!-- 触角 -->
-  <path d="M57 41 Q53 34 49 32" stroke="#ffffff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-  <path d="M67 41 Q71 34 75 32" stroke="#ffffff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-  <!-- 背线 -->
-  <line x1="62" y1="54" x2="62" y2="80" stroke="#1a7f37" stroke-width="2.4"/>
-  <!-- 腿（左三右三） -->
-  <path d="M50 58 L42 55" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
-  <path d="M49 66 L41 66" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
-  <path d="M50 74 L42 78" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
-  <path d="M74 58 L82 55" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
-  <path d="M75 66 L83 66" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
-  <path d="M74 74 L82 78" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
+
+  <!-- 悬浮的眼球（凌空瞪本体） -->
+  <g>
+    <!-- 眼白 -->
+    <ellipse cx="64" cy="52" rx="30" ry="19" fill="#ffffff"/>
+    <!-- 上眼睑线（让眼睛有"瞪"的神态） -->
+    <path d="M34 52 Q64 26 94 52" fill="none" stroke="#14632e" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M34 52 Q64 78 94 52" fill="none" stroke="#14632e" stroke-width="3.2" stroke-linecap="round"/>
+    <!-- 虹膜 -->
+    <circle cx="64" cy="52" r="11" fill="#14632e"/>
+    <!-- 瞳孔（直勾勾死瞪） -->
+    <circle cx="64" cy="52" r="5.5" fill="#0d1117"/>
+    <!-- 高光点（让它活起来） -->
+    <circle cx="60.5" cy="48" r="2.2" fill="#ffffff" opacity="0.9"/>
+  </g>
+
+  <!-- 悬浮感：下方悬浮波纹 -->
+  <path d="M52 82 Q64 86 76 82" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+  <path d="M56 89 Q64 92 72 89" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.45"/>
+
+  <!-- 被瞪的小虫（在眼皮底下瑟瑟发抖） -->
+  <g>
+    <!-- 虫身 -->
+    <ellipse cx="64" cy="106" rx="9" ry="7" fill="#0d1117"/>
+    <!-- 虫头 -->
+    <circle cx="64" cy="97.5" r="4.5" fill="#0d1117"/>
+    <!-- 虫眼（惊恐） -->
+    <circle cx="62" cy="96.5" r="1.1" fill="#ffffff"/>
+    <circle cx="66" cy="96.5" r="1.1" fill="#ffffff"/>
+    <!-- 触角 -->
+    <path d="M61 94 L58 90" stroke="#0d1117" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M67 94 L70 90" stroke="#0d1117" stroke-width="1.6" stroke-linecap="round"/>
+    <!-- 腿 -->
+    <path d="M56 104 L50 102" stroke="#0d1117" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M56 108 L50 109" stroke="#0d1117" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M72 104 L78 102" stroke="#0d1117" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M72 108 L78 109" stroke="#0d1117" stroke-width="1.6" stroke-linecap="round"/>
+    <!-- 汗滴（被瞪到冒汗，幽默感） -->
+    <path d="M76 94 Q79 90 76.5 87 Q73 90 76 94" fill="#7fd4ff"/>
+  </g>
 </svg>

@@ -8,7 +8,7 @@ branding:
 
 inputs:
   version:
-    description: "bugbot 版本（GitHub Release tag，如 v0.0.1）"
+    description: "hoverstare 版本（GitHub Release tag，如 v0.0.1）"
     required: false
     default: "v0.0.1"
 
@@ -25,14 +25,14 @@ runs:
         esac
         echo "target=$target" >> "$GITHUB_OUTPUT"
 
-    - name: Cache bugbot binary
+    - name: Cache hoverstare binary
       id: cache
       uses: actions/cache@v4
       with:
-        path: ${{ runner.temp }}/bugbot-bin
-        key: bugbot-${{ inputs.version }}-${{ steps.platform.outputs.target }}
+        path: ${{ runner.temp }}/hoverstare-bin
+        key: hoverstare-${{ inputs.version }}-${{ steps.platform.outputs.target }}
 
-    - name: Download bugbot
+    - name: Download hoverstare
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       env:
@@ -40,16 +40,16 @@ runs:
         TARGET: ${{ steps.platform.outputs.target }}
       run: |
         set -euo pipefail
-        mkdir -p "${{ runner.temp }}/bugbot-bin"
-        cd "${{ runner.temp }}/bugbot-bin"
-        base="https://github.com/liuchong/bugbot/releases/download/${VERSION}"
-        curl -fsSL "${base}/bugbot-${VERSION}-${TARGET}.tar.gz" -o bugbot.tar.gz
-        curl -fsSL "${base}/bugbot-${VERSION}-${TARGET}.tar.gz.sha256" -o bugbot.sha256
-        echo "$(cat bugbot.sha256)  bugbot.tar.gz" | sha256sum -c -
-        tar xzf bugbot.tar.gz
-        chmod +x bugbot
+        mkdir -p "${{ runner.temp }}/hoverstare-bin"
+        cd "${{ runner.temp }}/hoverstare-bin"
+        base="https://github.com/liuchong/hoverstare/releases/download/${VERSION}"
+        curl -fsSL "${base}/hoverstare-${VERSION}-${TARGET}.tar.gz" -o hoverstare.tar.gz
+        curl -fsSL "${base}/hoverstare-${VERSION}-${TARGET}.tar.gz.sha256" -o hoverstare.sha256
+        echo "$(cat hoverstare.sha256)  hoverstare.tar.gz" | sha256sum -c -
+        tar xzf hoverstare.tar.gz
+        chmod +x hoverstare
 
-    - name: Run bugbot
+    - name: Run hoverstare
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
@@ -57,7 +57,7 @@ runs:
         set -euo pipefail
         case "${{ github.event_name }}" in
           issue_comment|pull_request_review_comment)
-            "${{ runner.temp }}/bugbot-bin/bugbot" mention ;;
+            "${{ runner.temp }}/hoverstare-bin/hoverstare" mention ;;
           *)
-            "${{ runner.temp }}/bugbot-bin/bugbot" review ;;
+            "${{ runner.temp }}/hoverstare-bin/hoverstare" review ;;
         esac

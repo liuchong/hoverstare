@@ -1,0 +1,16 @@
+[package]
+name = "bugbot"
+version = "0.0.2"
+edition = "2024"
+description = "RENAMED to `hoverstare` — this crate is now a thin alias kept for backward compatibility. Please migrate: https://github.com/liuchong/hoverstare"
+repository = "https://github.com/liuchong/hoverstare"
+homepage = "https://github.com/liuchong/hoverstare"
+documentation = "https://github.com/liuchong/hoverstare/tree/master/specs"
+readme = "README.md"
+keywords = ["code-review", "github-actions", "llm", "ai", "pull-request"]
+categories = ["development-tools", "development-tools::build-utils"]
+license-file = "../../LICENSE"
+
+[dependencies]
+hoverstare = { version = "0.0.1", path = "../.." }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

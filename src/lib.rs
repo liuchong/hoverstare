@@ -1,4 +1,4 @@
-//! Bugbot — AI 代码审查 bot（specs/ 为单一事实来源）
+//! HoverStare — AI 代码审查 bot（specs/ 为单一事实来源）
 
 pub mod agent;
 pub mod cli;

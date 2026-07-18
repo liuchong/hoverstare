@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-DIR="${1:-/tmp/bugbot-caller-repo}"
+DIR="${1:-/tmp/hoverstare-caller-repo}"
 SRC="$(cd "$(dirname "$0")" && pwd)/caller_repo"
 
 rm -rf "$DIR" "$DIR.diff"
@@ -21,12 +21,12 @@ cp "$SRC/ids_old.rs" "$DIR/src/ids.rs"
 cd "$DIR"
 git init -q -b main
 git add -A
-git -c user.email=fixture@bugbot -c user.name=fixture commit -qm "base: stable make_id"
+git -c user.email=fixture@hoverstare -c user.name=fixture commit -qm "base: stable make_id"
 git branch base
 
 cp "$SRC/ids_new.rs" src/ids.rs
 git add -A
-git -c user.email=fixture@bugbot -c user.name=fixture commit -qm "feat: append timestamp to make_id"
+git -c user.email=fixture@hoverstare -c user.name=fixture commit -qm "feat: append timestamp to make_id"
 
 git diff base main > "$DIR.diff"
 echo "fixture repo: $DIR"

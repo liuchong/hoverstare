@@ -2,7 +2,7 @@
 
 ## 产品目标
 
-对 GitHub PR 做自动化缺陷审查。与"把 diff 扔给模型一次性出结论"的做法不同，Bugbot
+对 GitHub PR 做自动化缺陷审查。与"把 diff 扔给模型一次性出结论"的做法不同，HoverStare
 的审查模型可以在审查过程中**主动翻阅仓库**（读上下文文件、查符号调用点、对比 base
 版本）做定点验证，再给出结论；并在此基础上用**多路独立审查 + 投票 + 逐条复核**
 压制误报。
@@ -24,10 +24,10 @@ workflow 运行时下载对应版本二进制、校验 sha256、执行。
 ```
 ┌──────────────── GitHub Actions workflow ────────────────┐
 │ on: pull_request / issue_comment                         │
-│ steps: checkout → 下载(缓存) bugbot 二进制 → bugbot review │
+│ steps: checkout → 下载(缓存) hoverstare 二进制 → hoverstare review │
 └──────────────────────────┬───────────────────────────────┘
                            ▼
-                 bugbot (single static binary, musl)
+                 hoverstare (single static binary, musl)
  ┌─────────────────────────────────────────────────────────┐
  │ cli (clap):  review | mention                            │
  ├─────────────────────────────────────────────────────────┤
@@ -49,7 +49,7 @@ workflow 运行时下载对应版本二进制、校验 sha256、执行。
 | module | 职责 | spec |
 |---|---|---|
 | `cli` | 子命令 `review` / `mention`，参数解析 | 01 |
-| `config` | 环境变量 + `.github/bugbot.toml` 合并与校验 | 01 |
+| `config` | 环境变量 + `.github/hoverstare.toml` 合并与校验 | 01 |
 | `github` | REST + GraphQL 客户端：PR/diff 获取、review 发布、thread resolve、status check | 02 |
 | `diff` | unified diff 解析 → 可评论行号映射；过滤与截断 | 03 |
 | `agent` | `AgentBackend` trait、RigBackend、只读工具集、输出容错 | 04 |

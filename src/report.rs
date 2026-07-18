@@ -167,7 +167,7 @@ fn render_body(
     cfg: &Config,
     meta_findings: &[(String, String, u64, crate::config::Severity)],
 ) -> String {
-    let mut b = String::from("## 🐛 Bugbot Review\n\n");
+    let mut b = String::from("## 👁 HoverStare Review\n\n");
 
     b.push_str(&format!(
         "**审查范围** — {}；{} 个文件",
@@ -230,7 +230,7 @@ fn render_body(
 
     // 机器可读元数据（增量审查依赖，spec 07）
     b.push_str(&format!(
-        "<!-- bugbot-meta\nmode: {}\nhead_sha: {}\nfiles_reviewed: {}\nexcluded_files: {}\n",
+        "<!-- hoverstare-meta\nmode: {}\nhead_sha: {}\nfiles_reviewed: {}\nexcluded_files: {}\n",
         ctx.meta_mode, ctx.head_sha, ctx.files_reviewed, ctx.excluded_files
     ));
     for (fp, file, line, sev) in meta_findings {
@@ -367,7 +367,7 @@ mod tests {
         let r = build(&[], &d);
         assert!(r.comments.is_empty());
         assert!(r.body.contains("✅ 未发现缺陷"));
-        assert!(r.body.contains("<!-- bugbot-meta"));
+        assert!(r.body.contains("<!-- hoverstare-meta"));
     }
 
     #[test]

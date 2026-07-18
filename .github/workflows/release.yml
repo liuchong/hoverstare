@@ -24,15 +24,15 @@ jobs:
       - name: Build musl binary
         run: |
           cargo build --release --target x86_64-unknown-linux-musl
-          strip target/x86_64-unknown-linux-musl/release/bugbot
+          strip target/x86_64-unknown-linux-musl/release/hoverstare
 
       - name: Package
         run: |
           set -euo pipefail
           mkdir -p dist
-          name="bugbot-${GITHUB_REF_NAME}-x86_64-unknown-linux-musl"
+          name="hoverstare-${GITHUB_REF_NAME}-x86_64-unknown-linux-musl"
           cd target/x86_64-unknown-linux-musl/release
-          tar czf "../../../dist/${name}.tar.gz" bugbot
+          tar czf "../../../dist/${name}.tar.gz" hoverstare
           cd ../../../dist
           sha256sum "${name}.tar.gz" | awk '{print $1}' > "${name}.tar.gz.sha256"
           ls -la

@@ -9,7 +9,7 @@ PR 持续收到 push（`synchronize` 事件）时：
 3. 未修复的 findings **不重复评论**。
 
 状态全部存在 GitHub 侧（评论里的隐藏标记 + review body 的元数据注释），
-bugbot 本身无持久化，天然无状态。
+hoverstare 本身无持久化，天然无状态。
 
 ## 指纹（finding identity）
 
@@ -21,15 +21,15 @@ pub fn fingerprint(file: &str, line_content: &str, title: &str) -> String
 
 - `line_content` 取该行（或吸附后锚点行）的代码文本，使行号漂移（上方插入新行）
   不影响指纹稳定性；
-- 指纹嵌在每条 inline 评论的 `<!-- bugbot-finding:{fp} -->` 与 review body 的
-  `bugbot-meta` 中；
+- 指纹嵌在每条 inline 评论的 `<!-- hoverstare-finding:{fp} -->` 与 review body 的
+  `hoverstare-meta` 中；
 - 同锚点合并的评论含多个标记，解析时全部提取。
 
 ## 增量模式判定
 
 `pull_request: synchronize` 事件触发时：
 
-1. `list_reviews` 找最近一次 body 含 `<!-- bugbot-meta` 的 review，取其 `head_sha`
+1. `list_reviews` 找最近一次 body 含 `<!-- hoverstare-meta` 的 review，取其 `head_sha`
    为 `prior_sha`；找不到 → 全量模式；
 2. delta diff = `prior_sha...head_sha`（三点，merge-base 起算），作为**主审范围**
    喂给管线；
@@ -40,7 +40,7 @@ pub fn fingerprint(file: &str, line_content: &str, title: &str) -> String
 ## 自动 resolve
 
 1. GraphQL `list_review_threads` 拉取全部线程，过滤出未 resolve 且首条评论含
-   `bugbot-finding` 标记的，得到 `open_findings: [{thread_id, fingerprint, body}]`；
+   `hoverstare-finding` 标记的，得到 `open_findings: [{thread_id, fingerprint, body}]`；
 2. 把 open findings 的指纹、位置、描述注入审查 prompt（spec 04 用户提示增加
    `PREVIOUSLY REPORTED FINDINGS` 段落），要求模型逐个判定是否已修复，
    结果放 `resolved_finding_ids`；
@@ -54,7 +54,7 @@ pub fn fingerprint(file: &str, line_content: &str, title: &str) -> String
    **GITHUB_TOKEN 的平台限制**（GitHub 已知问题：默认 token 调
    `resolveReviewThread` 常返回 "Resource not accessible by integration"，即使
    有 `pull-requests: write`）——resolve 失败时降级为**线程内回复**
-   "✅ Bugbot 已确认修复"（REST replies 端点，默认 token 可用）。
+   "✅ HoverStare 已确认修复"（REST replies 端点，默认 token 可用）。
    配置 `GH_PAT`（classic PAT，`repo` scope）后可走完整 resolve 路径——
    客户端凭据 GH_PAT 优先于 GITHUB_TOKEN（spec 01）。
 
@@ -70,8 +70,8 @@ pub fn fingerprint(file: &str, line_content: &str, title: &str) -> String
 
 | context | state 规则 |
 |---|---|
-| `bugbot` | 运行完成 → success；分析失败 → error（配合 fail-open，不阻塞合并） |
-| `bugbot-findings` | 本次 + 未关闭 findings 中无 high/critical → success；否则 failure |
+| `hoverstare` | 运行完成 → success；分析失败 → error（配合 fail-open，不阻塞合并） |
+| `hoverstare-findings` | 本次 + 未关闭 findings 中无 high/critical → success；否则 failure |
 
 可被 branch protection 设为必需检查。
 

@@ -1,6 +1,6 @@
 //! 配置加载与校验（spec 01）
 //!
-//! 合并优先级：CLI flag > 环境变量 > `.github/bugbot.toml` > 内置默认值。
+//! 合并优先级：CLI flag > 环境变量 > `.github/hoverstare.toml` > 内置默认值。
 //! CLI flag 目前只覆盖 PR/repo 定位（见 cli.rs），不进 Config。
 
 use std::path::{Path, PathBuf};
@@ -112,7 +112,7 @@ pub enum LlmCredentials {
     },
 }
 
-/// `.github/bugbot.toml` 的文件结构（全部可选）
+/// `.github/hoverstare.toml` 的文件结构（全部可选）
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct TomlConfig {
@@ -164,7 +164,7 @@ impl Config {
     }
 
     fn load_toml(workspace: &Path) -> anyhow::Result<TomlConfig> {
-        let path = workspace.join(".github/bugbot.toml");
+        let path = workspace.join(".github/hoverstare.toml");
         if !path.exists() {
             return Ok(TomlConfig::default());
         }
@@ -174,13 +174,13 @@ impl Config {
     }
 
     fn merge(t: TomlConfig, workspace: PathBuf) -> anyhow::Result<Config> {
-        // model：BUGBOT_MODEL 环境变量 > toml > 默认
-        let model = std::env::var("BUGBOT_MODEL")
+        // model：HOVERSTARE_MODEL 环境变量 > toml > 默认
+        let model = std::env::var("HOVERSTARE_MODEL")
             .ok()
             .filter(|v| !v.is_empty())
             .or(t.model)
             .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
-        let reformat_model = std::env::var("BUGBOT_REFORMAT_MODEL")
+        let reformat_model = std::env::var("HOVERSTARE_REFORMAT_MODEL")
             .ok()
             .filter(|v| !v.is_empty())
             .or(t.reformat_model)

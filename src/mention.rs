@@ -1,4 +1,4 @@
-//! `@bugbot` 评论命令（spec 09）
+//! `@hoverstare` 评论命令（spec 09）
 
 use std::sync::Arc;
 
@@ -17,11 +17,11 @@ pub enum MentionCommand {
     Help,
 }
 
-/// 解析评论中的 @bugbot 命令（代码块内的 @bugbot 不响应，spec 09）
+/// 解析评论中的 @hoverstare 命令（代码块内的 @hoverstare 不响应，spec 09）
 pub fn parse_command(body: &str) -> Option<MentionCommand> {
     let stripped = strip_code_blocks(body);
-    let at = stripped.find("@bugbot")?;
-    let after = stripped[at + "@bugbot".len()..].trim_start();
+    let at = stripped.find("@hoverstare")?;
+    let after = stripped[at + "@hoverstare".len()..].trim_start();
     let first: String = after
         .chars()
         .take_while(|c| c.is_alphabetic())
@@ -30,7 +30,7 @@ pub fn parse_command(body: &str) -> Option<MentionCommand> {
     Some(match first.as_str() {
         "review" => MentionCommand::Review,
         "explain" => MentionCommand::Explain,
-        // 未识别命令与裸 @bugbot → help（spec 09）
+        // 未识别命令与裸 @hoverstare → help（spec 09）
         _ => MentionCommand::Help,
     })
 }
@@ -63,11 +63,11 @@ fn strip_code_blocks(body: &str) -> String {
     res
 }
 
-const HELP_TEXT: &str = r#"🐛 **Bugbot 命令列表**
+const HELP_TEXT: &str = r#"👁 **HoverStare 命令列表**
 
-- `@bugbot review` — 强制全量重审本 PR
-- `@bugbot explain` — 解释某条审查发现（在对应线程中回复使用）
-- `@bugbot help` — 显示本帮助"#;
+- `@hoverstare review` — 强制全量重审本 PR
+- `@hoverstare explain` — 解释某条审查发现（在对应线程中回复使用）
+- `@hoverstare help` — 显示本帮助"#;
 
 /// mention 命令入口（遵循与 review 相同的 fail-open 退出码契约）
 pub async fn run_mention(cfg: &Config) -> anyhow::Result<Outcome> {
@@ -75,7 +75,7 @@ pub async fn run_mention(cfg: &Config) -> anyhow::Result<Outcome> {
         return Ok(Outcome::Skipped("非评论事件".into()));
     };
     let Some(cmd) = parse_command(&ev.body) else {
-        return Ok(Outcome::Skipped("评论不含 @bugbot 命令".into()));
+        return Ok(Outcome::Skipped("评论不含 @hoverstare 命令".into()));
     };
     let repo = Repo::parse(&ev.repo).map_err(|e| anyhow::anyhow!("{e}"))?;
     let gh = GitHubClient::new(cfg.github_token.clone())?;
@@ -107,14 +107,14 @@ pub async fn run_mention(cfg: &Config) -> anyhow::Result<Outcome> {
         Err(e) => {
             let _ = gh.create_reaction(&repo, &ev, "-1").await;
             let _ = gh
-                .create_issue_comment(&repo, ev.pr_number, &format!("🐛 命令执行失败：{e:#}"))
+                .create_issue_comment(&repo, ev.pr_number, &format!("👁 命令执行失败：{e:#}"))
                 .await;
             Err(e)
         }
     }
 }
 
-/// `@bugbot review`：强制全量重审（spec 09）
+/// `@hoverstare review`：强制全量重审（spec 09）
 async fn do_review(
     cfg: &Config,
     _gh: &GitHubClient,
@@ -136,14 +136,14 @@ async fn do_review(
     }
 }
 
-/// `@bugbot explain`：解释发现（轻量调用，无多 pass）
+/// `@hoverstare explain`：解释发现（轻量调用，无多 pass）
 async fn do_explain(
     cfg: &Config,
     gh: &GitHubClient,
     repo: &Repo,
     ev: &MentionEvent,
 ) -> anyhow::Result<String> {
-    // 上下文：线程回复 → 被回复评论；否则最近一次 bugbot review 的 body
+    // 上下文：线程回复 → 被回复评论；否则最近一次 hoverstare review 的 body
     let context = if let Some(parent_id) = ev.in_reply_to_id() {
         gh.get_review_comment_body(repo, parent_id).await?
     } else {
@@ -158,8 +158,12 @@ async fn do_explain(
 
     let backend = crate::agent::rig_backend::RigBackend::new(cfg.llm.clone());
     let text = explain_with_backend(&backend, cfg, &context, &ev.body).await?;
-    gh.create_issue_comment(repo, ev.pr_number, &format!("🐛 **Bugbot 解释**\n\n{text}"))
-        .await?;
+    gh.create_issue_comment(
+        repo,
+        ev.pr_number,
+        &format!("👁 **HoverStare 解释**\n\n{text}"),
+    )
+    .await?;
     Ok("explain 已回复".to_string())
 }
 
@@ -173,7 +177,7 @@ async fn explain_with_backend(
     let shared: Arc<ToolShared> =
         ToolShared::new(cfg.workspace.clone(), "HEAD", cfg.max_tool_calls / 2);
     let req = ReviewRequest {
-        system_prompt: "你是 Bugbot，一名代码审查助手。用户要求你解释一条审查发现。\
+        system_prompt: "你是 HoverStare，一名代码审查助手。用户要求你解释一条审查发现。\
 用通俗易懂的中文解释：这是什么问题、什么条件下会触发、会造成什么影响、建议怎么修。\
 可以引用代码片段。回复控制在 300 字以内。"
             .to_string(),
@@ -209,32 +213,35 @@ mod tests {
     #[test]
     fn parses_commands() {
         assert_eq!(
-            parse_command("@bugbot review"),
+            parse_command("@hoverstare review"),
             Some(MentionCommand::Review)
         );
         assert_eq!(
-            parse_command("请 @bugbot explain 一下"),
+            parse_command("请 @hoverstare explain 一下"),
             Some(MentionCommand::Explain)
         );
-        assert_eq!(parse_command("@bugbot help"), Some(MentionCommand::Help));
-        assert_eq!(parse_command("@bugbot"), Some(MentionCommand::Help));
         assert_eq!(
-            parse_command("@bugbot frobnicate"),
+            parse_command("@hoverstare help"),
+            Some(MentionCommand::Help)
+        );
+        assert_eq!(parse_command("@hoverstare"), Some(MentionCommand::Help));
+        assert_eq!(
+            parse_command("@hoverstare frobnicate"),
             Some(MentionCommand::Help)
         );
         assert_eq!(parse_command("没有命令"), None);
-        assert_eq!(parse_command("提到 bugbot 但没有@"), None);
+        assert_eq!(parse_command("提到 hoverstare 但没有@"), None);
     }
 
     #[test]
     fn ignores_code_blocks() {
-        // 围栏代码块内的 @bugbot 不响应（spec 09）
-        assert_eq!(parse_command("```\n@bugbot review\n```"), None);
-        // 行内代码内的 @bugbot 不响应
-        assert_eq!(parse_command("你看 `@bugbot review` 这个命令"), None);
+        // 围栏代码块内的 @hoverstare 不响应（spec 09）
+        assert_eq!(parse_command("```\n@hoverstare review\n```"), None);
+        // 行内代码内的 @hoverstare 不响应
+        assert_eq!(parse_command("你看 `@hoverstare review` 这个命令"), None);
         // 代码块外的正常响应
         assert_eq!(
-            parse_command("```\nsome code\n```\n@bugbot review"),
+            parse_command("```\nsome code\n```\n@hoverstare review"),
             Some(MentionCommand::Review)
         );
     }

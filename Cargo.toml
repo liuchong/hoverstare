@@ -1,11 +1,11 @@
 [package]
-name = "bugbot"
+name = "hoverstare"
 version = "0.0.1"
 edition = "2024"
-description = "AI code review bot for GitHub PRs: repo-aware agentic review, multi-pass voting, precise inline comments, incremental tracking"
-repository = "https://github.com/liuchong/bugbot"
-homepage = "https://github.com/liuchong/bugbot"
-documentation = "https://github.com/liuchong/bugbot/tree/main/specs"
+description = "Repo-aware AI code review bot for GitHub PRs: agentic multi-pass review with voting, precise inline comments, incremental finding tracking"
+repository = "https://github.com/liuchong/hoverstare"
+homepage = "https://github.com/liuchong/hoverstare"
+documentation = "https://github.com/liuchong/hoverstare/tree/master/specs"
 readme = "README.md"
 keywords = ["code-review", "github-actions", "llm", "ai", "pull-request"]
 categories = ["development-tools", "development-tools::build-utils"]
@@ -15,9 +15,13 @@ exclude = [
     "spikes/",
     "tests/fixtures/",
     ".github/",
+    "crates/",
     "DESIGN.md",
     "AGENTS.md",
 ]
+
+[workspace]
+members = ["crates/*"]
 
 [dependencies]
 anyhow = "1"

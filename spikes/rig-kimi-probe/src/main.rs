@@ -41,7 +41,7 @@ struct Report {
 fn http() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(90))
-        .user_agent(concat!("bugbot-probe/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("hoverstare-probe/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("http client")
 }

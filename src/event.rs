@@ -12,7 +12,7 @@ pub struct PrRef {
     pub number: u64,
 }
 
-/// `@bugbot` 评论事件（spec 09）：issue_comment 与 pull_request_review_comment 统一
+/// `@hoverstare` 评论事件（spec 09）：issue_comment 与 pull_request_review_comment 统一
 #[derive(Debug, Clone)]
 pub struct MentionEvent {
     pub repo: String,

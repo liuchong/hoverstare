@@ -77,7 +77,7 @@ pub enum StatusState { Success, Failure, Error }
 
 ### 通用
 
-- 认证 `Authorization: Bearer <token>`；`User-Agent: bugbot/<version>`（GitHub 强制要求 UA）；
+- 认证 `Authorization: Bearer <token>`；`User-Agent: hoverstare/<version>`（GitHub 强制要求 UA）；
 - 429 / 5xx：指数退避重试（0.5s/2s/8s，共 3 次）；4xx 其他状态不重试；
 - 所有请求带 30s 超时；
 - token 用 `secrecy::SecretString` 持有，Debug 输出必须脱敏。

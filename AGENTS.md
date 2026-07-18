@@ -11,7 +11,7 @@ src/
 ├── main.rs            # 薄入口：tracing、子命令分发、退出码映射
 ├── lib.rs             # 模块声明（lib/bin 拆分，examples 复用 lib）
 ├── cli.rs             # clap 子命令：review / mention
-├── config.rs          # env + .github/bugbot.toml 合并与校验（spec 01）
+├── config.rs          # env + .github/hoverstare.toml 合并与校验（spec 01）
 ├── event.rs           # GitHub 事件解析（pull_request / issue_comment）
 ├── github.rs          # REST + GraphQL 客户端（spec 02）
 ├── diff.rs            # unified diff 解析、过滤、截断（spec 03）
@@ -24,7 +24,7 @@ src/
 ├── findings.rs        # 输出解析：三级提取 + jsonschema + 归一化
 ├── report.rs          # 校验、锚定降级链、同锚点合并、渲染（spec 06）
 ├── state.rs           # 指纹、标记解析、线程 resolve 规则（spec 07）
-├── mention.rs         # @bugbot 命令路由（spec 09）
+├── mention.rs         # @hoverstare 命令路由（spec 09）
 └── orchestrator.rs    # review 流程编排（fail-open 区间划分）
 
 specs/                 # 模块规格与里程碑（单一事实来源）

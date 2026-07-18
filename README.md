@@ -1,13 +1,13 @@
 <p align="center">
-  <img src=".github/assets/logo.svg" width="128" alt="bugbot logo" />
-  <h1 align="center">Bugbot</h1>
+  <img src=".github/assets/logo.svg" width="128" alt="hoverstare logo" />
+  <h1 align="center">HoverStare</h1>
   <p align="center">
     <b>AI code review that actually reads your repo.</b>
   </p>
   <p align="center">
-    <a href="https://github.com/liuchong/bugbot/actions/workflows/ci.yml"><img src="https://github.com/liuchong/bugbot/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-    <a href="https://github.com/liuchong/bugbot/releases"><img src="https://img.shields.io/github/v/release/liuchong/bugbot" alt="release" /></a>
-    <a href="https://crates.io/crates/bugbot"><img src="https://img.shields.io/crates/v/bugbot" alt="crates.io" /></a>
+    <a href="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml"><img src="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="https://github.com/liuchong/hoverstare/releases"><img src="https://img.shields.io/github/v/release/liuchong/hoverstare" alt="release" /></a>
+    <a href="https://crates.io/crates/hoverstare"><img src="https://img.shields.io/crates/v/hoverstare" alt="crates.io" /></a>
     <a href="https://license.pub/1pl/"><img src="https://img.shields.io/badge/license-1PL-green" alt="license 1PL" /></a>
   </p>
   <p align="center">
@@ -22,7 +22,7 @@
 
 <br/>
 
-Bugbot is an AI code review bot for GitHub pull requests, written in Rust and
+HoverStare is an AI code review bot for GitHub pull requests, written in Rust and
 shipped as a single static binary that runs as a GitHub Action. Instead of
 tossing a diff at a model in one shot, its reviewer **reads your repository
 like a human reviewer would** — opening context files, grepping call sites,
@@ -30,7 +30,7 @@ comparing against the base branch — before it says anything. A multi-pass
 vote plus an independent verifier keeps false positives down, and every
 finding it reports is tracked across commits until it's fixed.
 
-## Why Bugbot?
+## Why HoverStare?
 
 - 🔍 **Repo-aware, not diff-only.** The reviewing model gets a read-only tool
   set (`read_file` / `grep` / `glob` / `show_base_file`) and uses it to verify
@@ -43,7 +43,7 @@ finding it reports is tracked across commits until it's fixed.
 - 📌 **Precise inline comments.** Line numbers are validated against the real
   diff and snapped to the nearest valid anchor, so comments land exactly where
   the bug is — never on the wrong line.
-- 🔁 **Incremental reviews.** Push a fix and Bugbot reviews only the delta,
+- 🔁 **Incremental reviews.** Push a fix and HoverStare reviews only the delta,
   marks fixed findings as resolved (or leaves a "✅ confirmed fixed" note),
   and never repeats itself.
 - 🛡️ **Fail-open by design.** Network trouble, rate limits, or a flaky model
@@ -70,16 +70,16 @@ flowchart LR
 ```
 
 Every inline comment carries a hidden fingerprint (`path + code line + title`
-hash). On the next push, Bugbot diffs against its previous review, asks the
+hash). On the next push, HoverStare diffs against its previous review, asks the
 model which open findings are fixed, and resolves those threads — immune to
 line-number drift.
 
 ## Quick start (2 minutes)
 
-**1. Add the workflow** — `.github/workflows/bugbot.yml`:
+**1. Add the workflow** — `.github/workflows/hoverstare.yml`:
 
 ```yaml
-name: Bugbot
+name: HoverStare
 on:
   pull_request:
     types: [opened, reopened, synchronize]
@@ -94,22 +94,22 @@ permissions:
   statuses: write
 
 concurrency:
-  group: bugbot-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: hoverstare-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
-  bugbot:
+  hoverstare:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: liuchong/bugbot@v0
+      - uses: liuchong/hoverstare@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.BUGBOT_LLM_KEY }}
-          OPENAI_BASE_URL: ${{ vars.BUGBOT_LLM_BASE_URL }}
-          BUGBOT_MODEL: ${{ vars.BUGBOT_MODEL }}   # e.g. kimi-for-coding
+          OPENAI_API_KEY: ${{ secrets.HOVERSTARE_LLM_KEY }}
+          OPENAI_BASE_URL: ${{ vars.HOVERSTARE_LLM_BASE_URL }}
+          HOVERSTARE_MODEL: ${{ vars.HOVERSTARE_MODEL }}   # e.g. kimi-for-coding
 ```
 
 **2. Configure LLM credentials** (pick one):
@@ -117,12 +117,12 @@ jobs:
 | Provider | Settings |
 |---|---|
 | **Anthropic** | secret `ANTHROPIC_API_KEY` (default model `claude-sonnet-4-6`) |
-| **OpenAI-compatible** (Kimi, DeepSeek, OpenRouter…) | secret `OPENAI_API_KEY`, var `OPENAI_BASE_URL` (e.g. `https://api.kimi.com/coding/v1`), and a model name via var `BUGBOT_MODEL` or `model` in `.github/bugbot.toml` |
+| **OpenAI-compatible** (Kimi, DeepSeek, OpenRouter…) | secret `OPENAI_API_KEY`, var `OPENAI_BASE_URL` (e.g. `https://api.kimi.com/coding/v1`), and a model name via var `HOVERSTARE_MODEL` or `model` in `.github/hoverstare.toml` |
 
 > ⚠️ With an OpenAI-compatible endpoint you **must** set the model name —
 > the default `claude-sonnet-4-6` won't exist there.
 
-**3. (Optional) Repo config** — `.github/bugbot.toml`, every field optional:
+**3. (Optional) Repo config** — `.github/hoverstare.toml`, every field optional:
 
 ```toml
 model = "kimi-for-coding"             # main review model
@@ -136,20 +136,20 @@ max_tool_calls = 20                   # agentic loop tool budget
 timeout_secs = 900
 review_drafts = false
 fail_closed = false                   # true → analysis failures fail CI
-status_checks = false                 # write bugbot / bugbot-findings checks
+status_checks = false                 # write hoverstare / hoverstare-findings checks
 set_temperature = true                # false for endpoints that only accept default temperature
 instructions = ""                     # team-specific review focus, injected into the system prompt
 ```
 
-## `@bugbot` commands
+## `@hoverstare` commands
 
 Post in a PR (repo collaborators only):
 
 | Command | What it does |
 |---|---|
-| `@bugbot review` | Force a full re-review |
-| `@bugbot explain` | Reply in the thread with a plain-language explanation of the finding |
-| `@bugbot help` | Command list |
+| `@hoverstare review` | Force a full re-review |
+| `@hoverstare explain` | Reply in the thread with a plain-language explanation of the finding |
+| `@hoverstare help` | Command list |
 
 ## FAQ
 
@@ -159,15 +159,15 @@ Check workflow `permissions` (`pull-requests: write` required) and repo
 
 **"model not found"?**
 You configured an OpenAI-compatible endpoint but no model name. Set
-`BUGBOT_MODEL` (or `model` in `bugbot.toml`).
+`HOVERSTARE_MODEL` (or `model` in `hoverstare.toml`).
 
 **400 / invalid temperature?**
 Your endpoint only accepts the default temperature. Set
-`set_temperature = false` in `bugbot.toml`.
+`set_temperature = false` in `hoverstare.toml`.
 
 **Fixed findings aren't getting resolved?**
 A GitHub platform limitation: the default `GITHUB_TOKEN` cannot call
-`resolveReviewThread`. Bugbot falls back to a "✅ confirmed fixed" reply in
+`resolveReviewThread`. HoverStare falls back to a "✅ confirmed fixed" reply in
 the thread. For full resolution, store a classic PAT (`repo` scope) as secret
 `GH_PAT` and pass it in the workflow env.
 
@@ -178,7 +178,7 @@ Set `GITHUB_API_URL=https://<your-ghe-host>/api/v3`.
 
 ```bash
 # Dry-run a full review of a public PR (no publishing)
-export OPENAI_API_KEY=... OPENAI_BASE_URL=... BUGBOT_MODEL=...
+export OPENAI_API_KEY=... OPENAI_BASE_URL=... HOVERSTARE_MODEL=...
 cargo run -- review --repo owner/repo --pr 123 --dry-run
 
 # Review a local diff file (prints tool-call trace)

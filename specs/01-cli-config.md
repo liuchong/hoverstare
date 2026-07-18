@@ -7,15 +7,15 @@
 ## CLI
 
 ```
-bugbot <COMMAND>
+hoverstare <COMMAND>
 
 Commands:
   review    审查一个 PR（GitHub Actions 中的主入口）
-  mention   处理一条 @bugbot 评论（issue_comment 事件入口，M6）
+  mention   处理一条 @hoverstare 评论（issue_comment 事件入口，M6）
   version   打印版本
 ```
 
-### `bugbot review`
+### `hoverstare review`
 
 从 GitHub Actions 环境读取上下文，正常情况下不需要任何参数。
 
@@ -30,13 +30,13 @@ Commands:
 | env `GH_PAT` | 可选 classic PAT（`repo` scope）。存在时优先于 GITHUB_TOKEN——`resolveReviewThread` 对默认 token 有平台限制（spec 07） |
 | env `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`(+`OPENAI_BASE_URL`) | LLM 凭据 |
 | env `GITHUB_WORKSPACE` | checkout 后的仓库根目录（工具沙箱根） |
-| env `BUGBOT_MODEL` / `BUGBOT_REFORMAT_MODEL` | 覆盖 toml 中的模型名（调试/临时切换用） |
+| env `HOVERSTARE_MODEL` / `HOVERSTARE_REFORMAT_MODEL` | 覆盖 toml 中的模型名（调试/临时切换用） |
 
 非 Actions 环境本地调试时，`--pr` + `GITHUB_REPOSITORY` + 两个 token 即可运行。
 
 ## 配置文件
 
-仓库内 `.github/bugbot.toml`，所有字段可选，缺省用默认值：
+仓库内 `.github/hoverstare.toml`，所有字段可选，缺省用默认值：
 
 ```toml
 # 主审模型。Anthropic 模型名或 OpenAI-compatible 模型名
@@ -77,7 +77,7 @@ instructions = ""
 
 ## 配置合并优先级
 
-CLI flag > 环境变量 > `.github/bugbot.toml` > 内置默认值
+CLI flag > 环境变量 > `.github/hoverstare.toml` > 内置默认值
 
 校验规则（启动时 fail-fast，错误信息指出具体字段）：
 
@@ -91,7 +91,7 @@ CLI flag > 环境变量 > `.github/bugbot.toml` > 内置默认值
 - PR 为 draft 且 `review_drafts = false`
 - PR 作者是 bot（`[bot]` 后缀，如 dependabot）
 - diff 为空，或过滤后为空
-- issue_comment 事件中评论不含 `@bugbot`（mention 命令）
+- issue_comment 事件中评论不含 `@hoverstare`（mention 命令）
 
 ## 退出码契约
 
@@ -100,7 +100,7 @@ CLI flag > 环境变量 > `.github/bugbot.toml` > 内置默认值
 | 0 | 成功；或分析阶段任何失败（fail-open，默认）；或跳过 |
 | 1 | 配置错误；发布 review 和降级评论**都**失败；`fail_closed = true` 时的分析失败 |
 
-设计理由：bugbot 是辅助工具，自身故障（网络、API 限额、模型抽风）绝不阻塞用户 CI；
+设计理由：hoverstare 是辅助工具，自身故障（网络、API 限额、模型抽风）绝不阻塞用户 CI；
 但配置错误属于用户需要立即修正的问题，应该显眼失败。
 
 ## 关键类型
@@ -143,7 +143,7 @@ pub enum Severity { Low, Medium, High, Critical } // Ord: Critical > High > Medi
 - 会员订阅端点有**频控**：多 pass 并发（默认 3 路）+ verifier 在高峰可能触发限流，
   撞限流时把 `passes` 降到 1–2；
 - UA 合规：部分 provider 要求客户端保持真实 User-Agent，我们的 HTTP client 统一用
-  `bugbot/<version>`，不做伪装；
+  `hoverstare/<version>`，不做伪装；
 - Anthropic 兼容端点（如 `https://api.kimi.com/coding/`）也可走 `Anthropic` 凭据变体
   + base_url 覆盖，与 OpenAI 兼容路径二选一即可，默认用 OpenAI 兼容路径（实现更简单）。
 

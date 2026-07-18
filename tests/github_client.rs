@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use bugbot::github::{GitHubClient, GitHubError, NewReview, Repo};
+use hoverstare::github::{GitHubClient, GitHubError, NewReview, Repo};
 use httpmock::prelude::*;
 
 fn repo() -> Repo {
@@ -62,7 +62,7 @@ async fn diff_406_falls_back_to_files_api() {
     assert!(diff.contains("diff --git a/src/last.rs b/src/last.rs"));
     assert!(!diff.contains("bin/x.wasm")); // 无 patch 跳过
     // 重组结果必须能被 diff parser 解析
-    let parsed = bugbot::diff::ParsedDiff::parse(&diff);
+    let parsed = hoverstare::diff::ParsedDiff::parse(&diff);
     assert_eq!(parsed.files.len(), 101);
 }
 
@@ -130,7 +130,7 @@ async fn diff_success_passthrough() {
     let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
     let diff = gh.get_pull_request_diff(&repo(), 1).await.unwrap();
     assert!(diff.contains("diff --git"));
-    let parsed = bugbot::diff::ParsedDiff::parse(&diff);
+    let parsed = hoverstare::diff::ParsedDiff::parse(&diff);
     assert_eq!(parsed.files.len(), 1);
 }
 
@@ -150,7 +150,7 @@ async fn graphql_threads_pagination_and_resolve() {
         then.status(200).json_body(serde_json::json!({
             "data": {"repository": {"pullRequest": {"reviewThreads": {
                 "nodes": [
-                    {"id": "T1", "isResolved": false, "comments": {"nodes": [{"body": "bug <!-- bugbot-finding:aaaaaaaaaaaaaaaa -->"}]}},
+                    {"id": "T1", "isResolved": false, "comments": {"nodes": [{"body": "bug <!-- hoverstare-finding:aaaaaaaaaaaaaaaa -->"}]}},
                     {"id": "T2", "isResolved": true, "comments": {"nodes": [{"body": "old"}]}}
                 ],
                 "pageInfo": {"hasNextPage": true, "endCursor": "C1"}
@@ -223,7 +223,7 @@ async fn reviews_compare_and_status() {
             when.method(GET).path("/repos/o/r/pulls/1/reviews");
             then.status(200).json_body(serde_json::json!([
                 {"id": 1, "body": "plain review", "commit_id": "aaa"},
-                {"id": 2, "body": "<!-- bugbot-meta\nhead_sha: bbb123\n-->", "commit_id": "bbb123"}
+                {"id": 2, "body": "<!-- hoverstare-meta\nhead_sha: bbb123\n-->", "commit_id": "bbb123"}
             ]));
         })
         .await;
@@ -238,7 +238,7 @@ async fn reviews_compare_and_status() {
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/repos/o/r/statuses/ccc456")
-                .body_includes(r#""context":"bugbot-findings""#)
+                .body_includes(r#""context":"hoverstare-findings""#)
                 .body_includes(r#""state":"failure""#);
             then.status(200).json_body(serde_json::json!({"id": 1}));
         })
@@ -248,7 +248,7 @@ async fn reviews_compare_and_status() {
 
     let reviews = gh.list_reviews(&repo(), 1).await.unwrap();
     assert_eq!(reviews.len(), 2);
-    let prior = bugbot::state::parse_meta_head_sha(&reviews[1].body);
+    let prior = hoverstare::state::parse_meta_head_sha(&reviews[1].body);
     assert_eq!(prior.as_deref(), Some("bbb123"));
 
     let diff = gh
@@ -260,9 +260,9 @@ async fn reviews_compare_and_status() {
     gh.create_status(
         &repo(),
         "ccc456",
-        &bugbot::github::NewStatus {
-            context: "bugbot-findings",
-            state: bugbot::github::StatusState::Failure,
+        &hoverstare::github::NewStatus {
+            context: "hoverstare-findings",
+            state: hoverstare::github::StatusState::Failure,
             description: "存在高危".into(),
         },
     )
@@ -300,11 +300,11 @@ async fn reactions_use_correct_endpoints() {
     let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
 
     // issue_comment（无线程）
-    let ev_issue = bugbot::event::MentionEvent {
+    let ev_issue = hoverstare::event::MentionEvent {
         repo: "o/r".into(),
         pr_number: 1,
         comment_id: 11,
-        body: "@bugbot review".into(),
+        body: "@hoverstare review".into(),
         author_association: "OWNER".into(),
         in_reply_to: None,
     };
@@ -314,7 +314,7 @@ async fn reactions_use_correct_endpoints() {
     issue_reaction.assert_async().await;
 
     // pull_request_review_comment（线程回复）
-    let ev_review = bugbot::event::MentionEvent {
+    let ev_review = hoverstare::event::MentionEvent {
         comment_id: 22,
         in_reply_to: Some(9),
         ..ev_issue.clone()
@@ -356,12 +356,12 @@ fn mention_event_parsing() {
     let p = write(
         "e1.json",
         r#"{"issue": {"number": 5, "pull_request": {"url": "..."}},
-            "comment": {"id": 11, "body": "@bugbot review", "author_association": "OWNER", "in_reply_to_id": null}}"#,
+            "comment": {"id": 11, "body": "@hoverstare review", "author_association": "OWNER", "in_reply_to_id": null}}"#,
     );
     unsafe {
         std::env::set_var("GITHUB_EVENT_PATH", &p);
     }
-    let ev = bugbot::event::resolve_mention().unwrap().unwrap();
+    let ev = hoverstare::event::resolve_mention().unwrap().unwrap();
     assert_eq!(ev.pr_number, 5);
     assert_eq!(ev.comment_id, 11);
     assert!(ev.is_collaborator());
@@ -371,23 +371,23 @@ fn mention_event_parsing() {
     let p = write(
         "e2.json",
         r#"{"issue": {"number": 6},
-            "comment": {"id": 12, "body": "@bugbot review", "author_association": "OWNER", "in_reply_to_id": null}}"#,
+            "comment": {"id": 12, "body": "@hoverstare review", "author_association": "OWNER", "in_reply_to_id": null}}"#,
     );
     unsafe {
         std::env::set_var("GITHUB_EVENT_PATH", &p);
     }
-    assert!(bugbot::event::resolve_mention().unwrap().is_none());
+    assert!(hoverstare::event::resolve_mention().unwrap().is_none());
 
     // pull_request_review_comment（线程回复）
     let p = write(
         "e3.json",
         r#"{"pull_request": {"number": 7},
-            "comment": {"id": 22, "body": "@bugbot explain", "author_association": "NONE", "in_reply_to_id": 9}}"#,
+            "comment": {"id": 22, "body": "@hoverstare explain", "author_association": "NONE", "in_reply_to_id": 9}}"#,
     );
     unsafe {
         std::env::set_var("GITHUB_EVENT_PATH", &p);
     }
-    let ev = bugbot::event::resolve_mention().unwrap().unwrap();
+    let ev = hoverstare::event::resolve_mention().unwrap().unwrap();
     assert_eq!(ev.pr_number, 7);
     assert_eq!(ev.in_reply_to_id(), Some(9));
     assert!(!ev.is_collaborator()); // NONE → 无权限
@@ -406,7 +406,7 @@ async fn reply_to_review_comment_works() {
         })
         .await;
     let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
-    gh.reply_to_review_comment(&repo(), 1, 9, "✅ Bugbot 已确认修复")
+    gh.reply_to_review_comment(&repo(), 1, 9, "✅ HoverStare 已确认修复")
         .await
         .unwrap();
     m.assert_async().await;

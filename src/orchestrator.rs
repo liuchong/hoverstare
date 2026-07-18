@@ -70,7 +70,7 @@ pub async fn run_review(
         return Ok(Outcome::Skipped(format!("bot 作者: {}", pr.user.login)));
     }
 
-    // 增量模式判定（spec 07）：找最近一次含 bugbot-meta 的 review
+    // 增量模式判定（spec 07）：找最近一次含 hoverstare-meta 的 review
     let prior_sha = match gh.list_reviews(&repo, pr_ref.number).await {
         Ok(reviews) => reviews
             .iter()
@@ -299,7 +299,7 @@ async fn resolve_or_reply(
             };
             tracing::warn!("resolve 不可用（{e}），降级为线程内标记修复: {thread_id}");
             match gh
-                .reply_to_review_comment(repo, pr_number, cid, "✅ Bugbot 已确认修复")
+                .reply_to_review_comment(repo, pr_number, cid, "✅ HoverStare 已确认修复")
                 .await
             {
                 Ok(()) => ResolveOutcome::Replied,
@@ -312,7 +312,7 @@ async fn resolve_or_reply(
     }
 }
 
-/// 拉取历史未关闭的 bugbot findings（GraphQL threads + 标记解析）
+/// 拉取历史未关闭的 hoverstare findings（GraphQL threads + 标记解析）
 async fn fetch_open_findings(gh: &GitHubClient, repo: &Repo, number: u64) -> Vec<OpenFinding> {
     match gh.list_review_threads(repo, number).await {
         Ok(threads) => threads
@@ -321,7 +321,7 @@ async fn fetch_open_findings(gh: &GitHubClient, repo: &Repo, number: u64) -> Vec
             .filter_map(|t| {
                 let fingerprints = state::extract_fingerprints(&t.first_comment_body);
                 if fingerprints.is_empty() {
-                    return None; // 非 bugbot 线程
+                    return None; // 非 hoverstare 线程
                 }
                 let has_high_severity =
                     t.first_comment_body.contains('🔴') || t.first_comment_body.contains('🟠');
@@ -355,14 +355,14 @@ async fn post_status_checks(
             repo,
             head_sha,
             &NewStatus {
-                context: "bugbot",
+                context: "hoverstare",
                 state: StatusState::Success,
                 description: "审查完成".to_string(),
             },
         )
         .await
     {
-        tracing::warn!("写 status check bugbot 失败: {e}");
+        tracing::warn!("写 status check hoverstare 失败: {e}");
     }
 
     let new_high = analysis
@@ -397,14 +397,14 @@ async fn post_status_checks(
             repo,
             head_sha,
             &NewStatus {
-                context: "bugbot-findings",
+                context: "hoverstare-findings",
                 state,
                 description: desc,
             },
         )
         .await
     {
-        tracing::warn!("写 status check bugbot-findings 失败: {e}");
+        tracing::warn!("写 status check hoverstare-findings 失败: {e}");
     }
 }
 
