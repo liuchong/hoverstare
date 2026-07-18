@@ -1,30 +1,82 @@
-# Bugbot 🐛
+<p align="center">
+  <img src=".github/assets/logo.svg" width="128" alt="bugbot logo" />
+  <h1 align="center">Bugbot</h1>
+  <p align="center">
+    <b>AI code review that actually reads your repo.</b>
+  </p>
+  <p align="center">
+    <a href="https://github.com/liuchong/bugbot/actions/workflows/ci.yml"><img src="https://github.com/liuchong/bugbot/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="https://github.com/liuchong/bugbot/releases"><img src="https://img.shields.io/github/v/release/liuchong/bugbot" alt="release" /></a>
+    <a href="https://crates.io/crates/bugbot"><img src="https://img.shields.io/crates/v/bugbot" alt="crates.io" /></a>
+    <a href="https://license.pub/1pl/"><img src="https://img.shields.io/badge/license-1PL-green" alt="license 1PL" /></a>
+  </p>
+  <p align="center">
+    <b>English</b> ·
+    <a href="README.zh-CN.md">简体中文</a> ·
+    <a href="README.ru.md">Русский</a> ·
+    <a href="README.fr.md">Français</a> ·
+    <a href="README.de.md">Deutsch</a> ·
+    <a href="README.es.md">Español</a>
+  </p>
+</p>
 
-Rust 编写的 AI 代码审查 bot。以 GitHub Action 形态运行，对 PR 做**仓库感知的
-agentic 审查**：审查模型可以像人类 reviewer 一样翻阅仓库（读上下文、查调用点、
-对比 base 版本）做定点验证，再用**多路独立审查 + 投票 + 逐条复核**压制误报，
-把高置信度的缺陷以精确到行的行内评论发到 PR 上，并跨 commit 追踪这些发现直到修复。
+<br/>
 
-## 特性
+Bugbot is an AI code review bot for GitHub pull requests, written in Rust and
+shipped as a single static binary that runs as a GitHub Action. Instead of
+tossing a diff at a model in one shot, its reviewer **reads your repository
+like a human reviewer would** — opening context files, grepping call sites,
+comparing against the base branch — before it says anything. A multi-pass
+vote plus an independent verifier keeps false positives down, and every
+finding it reports is tracked across commits until it's fixed.
 
-- **仓库感知审查**：只读工具集（read_file / grep / glob / show_base_file），
-  机器层强制只读；能发现"bug 藏在被改函数的调用方里"这类纯 diff 审查看不到的问题
-- **多 pass 投票 + verifier**：3 路并行独立审查（不同侧重），≥2 票入选，
-  单票发现由 verifier 独立复核，显著降低误报
-- **精确锚定**：行号校验 + 吸附降级链，评论落在正确的行上
-- **增量审查**：push 新 commit 后只审增量；历史发现修复后自动 resolve 线程，
-  未修复不重复评论
-- **status checks**：`bugbot` / `bugbot-findings`，可接 branch protection
-- **`@bugbot` 命令**：PR 评论里指挥 bot 重审/解释
-- **fail-open**：bugbot 自身故障（网络、限流、模型抽风）永远不阻塞你的 CI
-- **BYOK**：自带 LLM key，支持 Anthropic 及任何 OpenAI 兼容端点（Kimi、DeepSeek、
-  OpenRouter 等）
+## Why Bugbot?
 
-## 快速开始（2 分钟）
+- 🔍 **Repo-aware, not diff-only.** The reviewing model gets a read-only tool
+  set (`read_file` / `grep` / `glob` / `show_base_file`) and uses it to verify
+  suspicions before reporting. It catches bugs that hide *outside* the diff —
+  like a changed function whose callers break two files away.
+- 🗳️ **Multi-pass voting + verifier.** Three independent review passes
+  (correctness / concurrency / security lenses) vote on findings; lone-vote
+  findings must survive an independent verifier pass with tool access.
+  High signal, low noise.
+- 📌 **Precise inline comments.** Line numbers are validated against the real
+  diff and snapped to the nearest valid anchor, so comments land exactly where
+  the bug is — never on the wrong line.
+- 🔁 **Incremental reviews.** Push a fix and Bugbot reviews only the delta,
+  marks fixed findings as resolved (or leaves a "✅ confirmed fixed" note),
+  and never repeats itself.
+- 🛡️ **Fail-open by design.** Network trouble, rate limits, or a flaky model
+  will never block your CI.
+- 🔑 **BYOK.** Bring your own key: Anthropic, or any OpenAI-compatible endpoint
+  (Kimi, DeepSeek, OpenRouter, …). Code goes straight to your provider.
 
-### 1. 加 workflow
+## How it works
 
-`.github/workflows/bugbot.yml`：
+```mermaid
+flowchart LR
+    A[PR opened / synchronized] --> B{skip?}
+    B -->|draft / bot / empty diff| Z((exit 0))
+    B --> C[fetch diff]
+    C --> D{prior review?}
+    D -->|yes| E[delta diff]
+    D -->|no| F[full diff]
+    E --> G
+    F --> G["N parallel review passes<br/>(read-only repo tools)"]
+    G --> H[cluster & vote]
+    H --> I[verifier pass]
+    I --> J[validate & anchor lines]
+    J --> K["post review<br/>+ resolve fixed threads<br/>+ status checks"]
+```
+
+Every inline comment carries a hidden fingerprint (`path + code line + title`
+hash). On the next push, Bugbot diffs against its previous review, asks the
+model which open findings are fixed, and resolves those threads — immune to
+line-number drift.
+
+## Quick start (2 minutes)
+
+**1. Add the workflow** — `.github/workflows/bugbot.yml`:
 
 ```yaml
 name: Bugbot
@@ -52,117 +104,94 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: liuchong/bugbot@v1
+      - uses: liuchong/bugbot@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.BUGBOT_LLM_KEY }}
           OPENAI_BASE_URL: ${{ vars.BUGBOT_LLM_BASE_URL }}
-          BUGBOT_MODEL: ${{ vars.BUGBOT_MODEL }}   # 如 kimi-for-coding
+          BUGBOT_MODEL: ${{ vars.BUGBOT_MODEL }}   # e.g. kimi-for-coding
 ```
 
-### 2. 配 LLM 凭据（二选一）
+**2. Configure LLM credentials** (pick one):
 
-**Anthropic**：secret `ANTHROPIC_API_KEY`，默认模型 `claude-sonnet-4-6`。
+| Provider | Settings |
+|---|---|
+| **Anthropic** | secret `ANTHROPIC_API_KEY` (default model `claude-sonnet-4-6`) |
+| **OpenAI-compatible** (Kimi, DeepSeek, OpenRouter…) | secret `OPENAI_API_KEY`, var `OPENAI_BASE_URL` (e.g. `https://api.kimi.com/coding/v1`), and a model name via var `BUGBOT_MODEL` or `model` in `.github/bugbot.toml` |
 
-**OpenAI 兼容端点**（如 Kimi Code）：secret `OPENAI_API_KEY`，
-env/var `OPENAI_BASE_URL`（如 `https://api.kimi.com/coding/v1`）。
-模型名（如 `kimi-for-coding`）二选一配置：
+> ⚠️ With an OpenAI-compatible endpoint you **must** set the model name —
+> the default `claude-sonnet-4-6` won't exist there.
 
-- env/var `BUGBOT_MODEL`（如上 workflow 所示），或
-- `.github/bugbot.toml` 的 `model` 字段（env 优先于 toml）。
-
-> ⚠️ 不配模型名时会用默认的 `claude-sonnet-4-6`——对非 Anthropic 端点会报模型不存在，
-> 所以用 OpenAI 兼容端点时必须配一个。
-
-### 3.（可选）加仓库配置
-
-`.github/bugbot.toml`（全部字段可选，有默认值）：
+**3. (Optional) Repo config** — `.github/bugbot.toml`, every field optional:
 
 ```toml
-model = "kimi-for-coding"          # 主审模型
-reformat_model = "kimi-for-coding-highspeed"  # 输出修复用的廉价模型
-passes = 3                          # 并行审查路数，1 = 关闭投票
-verify = true                       # 单票 finding 过 verifier 复核
-severity_threshold = "medium"       # 低于此级别只进摘要 Nitpicks
+model = "kimi-for-coding"             # main review model
+reformat_model = "kimi-for-coding-highspeed"  # cheap model for output repair
+passes = 3                            # parallel review passes; 1 disables voting
+verify = true                         # verifier pass for single-vote findings
+severity_threshold = "medium"         # below this → Nitpicks section only
 ignore = ["*.lock", "**/dist/**", "**/*.min.js"]
-max_diff_kb = 400                   # diff 大小预算（超出按优先级截断）
-max_tool_calls = 20                 # agentic 循环工具预算
+max_diff_kb = 400                     # diff budget (truncated by priority)
+max_tool_calls = 20                   # agentic loop tool budget
 timeout_secs = 900
-review_drafts = false               # 是否审查 draft PR
-fail_closed = false                 # true 时分析失败会让 CI 失败
-status_checks = false               # 写 bugbot / bugbot-findings 两个 status check
-set_temperature = true              # 端点只接受默认温度时置 false（如 kimi-for-coding）
-instructions = ""                   # 团队特定关注点，注入系统提示
+review_drafts = false
+fail_closed = false                   # true → analysis failures fail CI
+status_checks = false                 # write bugbot / bugbot-findings checks
+set_temperature = true                # false for endpoints that only accept default temperature
+instructions = ""                     # team-specific review focus, injected into the system prompt
 ```
 
-## 它怎么工作
+## `@bugbot` commands
 
-```
-PR 事件 → 跳过判断（draft/bot/空 diff）→ 拉 diff（大 PR 自动回退 files API）
-→ 过滤/截断 → [增量模式] 取上次审查以来的 delta
-→ 多路并行审查（模型可用只读工具翻仓库定点验证）→ 聚类投票 → verifier 复核
-→ 行号校验/吸附 → 一次请求发布 review（行内评论 + 摘要 + 元数据）
-→ resolve 已修复线程 → 写 status checks
-```
+Post in a PR (repo collaborators only):
 
-- 每条行内评论带隐藏指纹标记（`path+代码行内容+标题` 的哈希），跨 commit 追踪；
-  行号漂移不影响指纹稳定性
-- 只报告真实缺陷（逻辑错误/安全/竞态/空解引用/差一/资源泄漏），
-  不报风格、文档、测试覆盖率
-- diff 和代码内容被声明为不可信数据，防 prompt injection；工具注册表机器层只读
-
-## `@bugbot` 命令
-
-在 PR 评论中使用（仅 repo collaborator 可触发）：
-
-| 命令 | 行为 |
+| Command | What it does |
 |---|---|
-| `@bugbot review` | 强制全量重审 |
-| `@bugbot explain` | 在线程里解释该发现：为什么是问题、何时触发、怎么修 |
-| `@bugbot help` | 命令列表 |
+| `@bugbot review` | Force a full re-review |
+| `@bugbot explain` | Reply in the thread with a plain-language explanation of the finding |
+| `@bugbot help` | Command list |
 
-## 常见问题
+## FAQ
 
-**Q: 报 "model not found" / "模型不存在"？**
-你用的是 OpenAI 兼容端点但没配模型名。设 `BUGBOT_MODEL`（或 toml 的 `model`）
-为端点的模型名，如 `kimi-for-coding`。
+**Reviews/comments fail with permission errors?**
+Check workflow `permissions` (`pull-requests: write` required) and repo
+*Settings → Actions → General → Workflow permissions* is "Read and write".
 
-**Q: 评论发不出来，报权限错误？**
-检查 workflow `permissions`（需要 `pull-requests: write`），以及仓库
-Settings → Actions → General → Workflow permissions 是 "Read and write"。
+**"model not found"?**
+You configured an OpenAI-compatible endpoint but no model name. Set
+`BUGBOT_MODEL` (or `model` in `bugbot.toml`).
 
-**Q: 状态码 400 / invalid temperature？**
-你的端点只接受默认 temperature，在 `bugbot.toml` 置 `set_temperature = false`。
+**400 / invalid temperature?**
+Your endpoint only accepts the default temperature. Set
+`set_temperature = false` in `bugbot.toml`.
 
-**Q: 已修复的发现没有被 resolve？**
-GitHub 平台限制：默认 `GITHUB_TOKEN` 无法调用 `resolveReviewThread`。
-此时 bugbot 自动降级为在线程里回复"✅ 已确认修复"。如需完整 resolve，
-创建 classic PAT（`repo` scope）存为 secret `GH_PAT` 并在 workflow env 传入即可。
+**Fixed findings aren't getting resolved?**
+A GitHub platform limitation: the default `GITHUB_TOKEN` cannot call
+`resolveReviewThread`. Bugbot falls back to a "✅ confirmed fixed" reply in
+the thread. For full resolution, store a classic PAT (`repo` scope) as secret
+`GH_PAT` and pass it in the workflow env.
 
-**Q: 被限流？**
-`passes` 降到 1–2，或换按量付费端点。bugbot 对 429 会指数退避重试，
-最终 fail-open（不会弄红你的 CI）。
+**GitHub Enterprise?**
+Set `GITHUB_API_URL=https://<your-ghe-host>/api/v3`.
 
-**Q: 支持 GitHub Enterprise？**
-设 `GITHUB_API_URL=https://<你的 GHE 域名>/api/v3`。
-
-## 本地调试
+## Local development
 
 ```bash
-# 对公开 PR 完整跑一遍但不发布（dry-run）
-export OPENAI_API_KEY=... OPENAI_BASE_URL=...
+# Dry-run a full review of a public PR (no publishing)
+export OPENAI_API_KEY=... OPENAI_BASE_URL=... BUGBOT_MODEL=...
 cargo run -- review --repo owner/repo --pr 123 --dry-run
 
-# 对本地 diff 文件审查（带工具轨迹输出）
+# Review a local diff file (prints tool-call trace)
 cargo run --example local_review -- path/to.diff [base_ref]
+
+cargo test                                   # unit + httpmock contract tests
+cargo clippy --all-targets -- -D warnings
+cargo fmt
 ```
 
-## 开发
-
-- 单一事实来源：[`specs/`](specs/README.md)（模块规格 + 里程碑计划）
-- `cargo test`（单元 + httpmock 合约）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt`
-- 设计文档：[`DESIGN.md`](DESIGN.md)
+Specs and the milestone plan live in [`specs/`](specs/README.md) — the single
+source of truth for design decisions.
 
 ## License
 
-MIT
+[1PL — One Public License](https://license.pub/1pl/)

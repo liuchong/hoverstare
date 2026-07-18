@@ -43,7 +43,7 @@ jobs:
           files: dist/*
           generate_release_notes: true
 
-  # 大版本浮动 tag（如 v1 指向最新 v1.x.y），用户侧 @v1 自动跟进修复版
+  # 大版本浮动 tag（如 v0 指向最新 v0.x.y），用户侧 @v0 自动跟进修复版
   move-major-tag:
     needs: build-musl
     runs-on: ubuntu-latest

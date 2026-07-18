@@ -1,23 +1,39 @@
 [package]
 name = "bugbot"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
+description = "AI code review bot for GitHub PRs: repo-aware agentic review, multi-pass voting, precise inline comments, incremental tracking"
+repository = "https://github.com/liuchong/bugbot"
+homepage = "https://github.com/liuchong/bugbot"
+documentation = "https://github.com/liuchong/bugbot/tree/main/specs"
+readme = "README.md"
+keywords = ["code-review", "github-actions", "llm", "ai", "pull-request"]
+categories = ["development-tools", "development-tools::build-utils"]
+license-file = "LICENSE"
+exclude = [
+    "specs/",
+    "spikes/",
+    "tests/fixtures/",
+    ".github/",
+    "DESIGN.md",
+    "AGENTS.md",
+]
 
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
-futures = "0.3.32"
+futures = "0.3"
 globset = "0.4"
-ignore = "0.4.30"
-jsonschema = "0.48.0"
-regex = "1.13.1"
+ignore = "0.4"
+jsonschema = "0.48"
+regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rig-core = "0.36"
 secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha1 = "0.11.0"
+sha1 = "0.11"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 toml = "0.8"
@@ -25,5 +41,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
-httpmock = "0.8.3"
+httpmock = "0.8"
 tempfile = "3"
