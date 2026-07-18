@@ -1,9 +1,9 @@
-name: "Bugbot"
-description: "AI 代码审查：仓库感知的 agentic 审查 + 多路投票降误报，行内评论精确锚定"
+name: "HoverStare"
+description: "Repo-aware AI code review: agentic multi-pass review with voting, precise inline comments, and incremental finding tracking"
 author: "liuchong"
 
 branding:
-  icon: "check-circle"
+  icon: "eye"
   color: "green"
 
 inputs:
