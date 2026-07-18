@@ -5,6 +5,9 @@
     <b>ИИ-ревью кода, которое действительно читает ваш репозиторий.</b>
   </p>
   <p align="center">
+    <i>Название — от гэга из фильма Стивена Чоу «凌空瞪»: отделённый от тела глаз, парящий в воздухе и пристально смотрящий на вас.</i>
+  </p>
+  <p align="center">
     <a href="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml"><img src="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
     <a href="https://github.com/liuchong/hoverstare/releases"><img src="https://img.shields.io/github/v/release/liuchong/hoverstare" alt="release" /></a>
     <a href="https://crates.io/crates/hoverstare"><img src="https://img.shields.io/crates/v/hoverstare" alt="crates.io" /></a>

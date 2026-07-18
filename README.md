@@ -5,6 +5,9 @@
     <b>AI code review that actually reads your repo.</b>
   </p>
   <p align="center">
+    <i>The name comes from the Stephen Chow movie gag "凌空瞪" — a disembodied eyeball floating in mid-air, staring you down.</i>
+  </p>
+  <p align="center">
     <a href="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml"><img src="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
     <a href="https://github.com/liuchong/hoverstare/releases"><img src="https://img.shields.io/github/v/release/liuchong/hoverstare" alt="release" /></a>
     <a href="https://crates.io/crates/hoverstare"><img src="https://img.shields.io/crates/v/hoverstare" alt="crates.io" /></a>

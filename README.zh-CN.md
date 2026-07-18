@@ -5,6 +5,9 @@
     <b>真正会读你仓库的 AI 代码审查。</b>
   </p>
   <p align="center">
+    <i>名字来自周星驰电影梗"凌空瞪"——一只离体眼球悬浮半空，直勾勾瞪着你。</i>
+  </p>
+  <p align="center">
     <a href="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml"><img src="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
     <a href="https://github.com/liuchong/hoverstare/releases"><img src="https://img.shields.io/github/v/release/liuchong/hoverstare" alt="release" /></a>
     <a href="https://crates.io/crates/hoverstare"><img src="https://img.shields.io/crates/v/hoverstare" alt="crates.io" /></a>

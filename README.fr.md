@@ -5,6 +5,9 @@
     <b>La revue de code IA qui lit vraiment votre dépôt.</b>
   </p>
   <p align="center">
+    <i>Le nom vient du gag du film de Stephen Chow « 凌空瞪 » : un œil désincarné flottant dans les airs qui vous fixe.</i>
+  </p>
+  <p align="center">
     <a href="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml"><img src="https://github.com/liuchong/hoverstare/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
     <a href="https://github.com/liuchong/hoverstare/releases"><img src="https://img.shields.io/github/v/release/liuchong/hoverstare" alt="release" /></a>
     <a href="https://crates.io/crates/hoverstare"><img src="https://img.shields.io/crates/v/hoverstare" alt="crates.io" /></a>
