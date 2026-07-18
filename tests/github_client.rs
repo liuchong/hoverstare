@@ -417,7 +417,7 @@ async fn reply_to_review_comment_works() {
 // ---------------------------------------------------------------------------
 
 /// env 依赖测试的串行锁（GITHUB_API_URL 是进程级共享状态）
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn cfg_with_status_checks(status_checks: bool) -> hoverstare::config::Config {
     unsafe {
@@ -430,7 +430,7 @@ fn cfg_with_status_checks(status_checks: bool) -> hoverstare::config::Config {
 
 #[tokio::test]
 async fn skipped_run_still_posts_status_check() {
-    let _guard = ENV_LOCK.lock().unwrap();
+    let _guard = ENV_LOCK.lock().await;
     let server = MockServer::start_async().await;
     server
         .mock_async(|when, then| {
@@ -478,7 +478,7 @@ async fn skipped_run_still_posts_status_check() {
 
 #[tokio::test]
 async fn no_status_check_when_disabled() {
-    let _guard = ENV_LOCK.lock().unwrap();
+    let _guard = ENV_LOCK.lock().await;
     let server = MockServer::start_async().await;
     server
         .mock_async(|when, then| {
