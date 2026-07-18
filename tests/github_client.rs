@@ -392,3 +392,22 @@ fn mention_event_parsing() {
     assert_eq!(ev.in_reply_to_id(), Some(9));
     assert!(!ev.is_collaborator()); // NONE → 无权限
 }
+
+/// resolve 降级路径：REST 线程回复端点（spec 07）
+#[tokio::test]
+async fn reply_to_review_comment_works() {
+    let server = MockServer::start_async().await;
+    let m = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/repos/o/r/pulls/1/comments/9/replies")
+                .body_includes("已确认修复");
+            then.status(200).json_body(serde_json::json!({"id": 10}));
+        })
+        .await;
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    gh.reply_to_review_comment(&repo(), 1, 9, "✅ Bugbot 已确认修复")
+        .await
+        .unwrap();
+    m.assert_async().await;
+}

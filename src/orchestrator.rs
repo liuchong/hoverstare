@@ -236,18 +236,24 @@ pub async fn run_review(
         }
     };
 
-    // resolve 已修复线程（spec 07）
+    // resolve 已修复线程（spec 07；GITHUB_TOKEN 限制时降级为线程内标记）
     let resolved_fps: BTreeSet<String> = analysis.resolved_finding_ids.iter().cloned().collect();
     let to_resolve = state::resolvable_threads(&open_findings, &resolved_fps);
     let mut resolved_count = 0;
+    let mut replied_count = 0;
     for tid in &to_resolve {
-        match gh.resolve_review_thread(tid).await {
-            Ok(()) => resolved_count += 1,
-            Err(e) => tracing::warn!("resolve 线程 {tid} 失败: {e}"),
+        let comment_id = open_findings
+            .iter()
+            .find(|t| &t.thread_id == tid)
+            .and_then(|t| t.first_comment_id);
+        match resolve_or_reply(&gh, &repo, pr_ref.number, tid, comment_id).await {
+            ResolveOutcome::Resolved => resolved_count += 1,
+            ResolveOutcome::Replied => replied_count += 1,
+            ResolveOutcome::Failed => {}
         }
     }
-    if resolved_count > 0 {
-        tracing::info!("已自动 resolve {resolved_count} 个线程");
+    if resolved_count > 0 || replied_count > 0 {
+        tracing::info!("已修复线程处理：resolve {resolved_count} 个，降级标记 {replied_count} 个");
     }
 
     // status checks（spec 07）
@@ -269,6 +275,43 @@ pub async fn run_review(
     })
 }
 
+enum ResolveOutcome {
+    Resolved,
+    Replied,
+    Failed,
+}
+
+/// resolve 线程；GITHUB_TOKEN 平台限制（Resource not accessible by integration）
+/// 时降级为线程内回复"已修复"标记（spec 07）
+async fn resolve_or_reply(
+    gh: &GitHubClient,
+    repo: &Repo,
+    pr_number: u64,
+    thread_id: &str,
+    comment_id: Option<u64>,
+) -> ResolveOutcome {
+    match gh.resolve_review_thread(thread_id).await {
+        Ok(()) => ResolveOutcome::Resolved,
+        Err(e) => {
+            let Some(cid) = comment_id else {
+                tracing::warn!("resolve 线程 {thread_id} 失败且无评论 id 可降级: {e}");
+                return ResolveOutcome::Failed;
+            };
+            tracing::warn!("resolve 不可用（{e}），降级为线程内标记修复: {thread_id}");
+            match gh
+                .reply_to_review_comment(repo, pr_number, cid, "✅ Bugbot 已确认修复")
+                .await
+            {
+                Ok(()) => ResolveOutcome::Replied,
+                Err(e2) => {
+                    tracing::warn!("降级标记也失败: {e2}");
+                    ResolveOutcome::Failed
+                }
+            }
+        }
+    }
+}
+
 /// 拉取历史未关闭的 bugbot findings（GraphQL threads + 标记解析）
 async fn fetch_open_findings(gh: &GitHubClient, repo: &Repo, number: u64) -> Vec<OpenFinding> {
     match gh.list_review_threads(repo, number).await {
@@ -287,6 +330,7 @@ async fn fetch_open_findings(gh: &GitHubClient, repo: &Repo, number: u64) -> Vec
                     fingerprints,
                     description: state::strip_markers(&t.first_comment_body),
                     has_high_severity,
+                    first_comment_id: t.first_comment_id,
                 })
             })
             .collect(),

@@ -233,9 +233,11 @@ impl Config {
             ),
         };
 
-        let github_token = std::env::var("GITHUB_TOKEN")
+        // GH_PAT 优先（GraphQL resolveReviewThread 需要 classic PAT 才可靠，spec 07）
+        let github_token = std::env::var("GH_PAT")
             .ok()
             .filter(|v| !v.is_empty())
+            .or_else(|| std::env::var("GITHUB_TOKEN").ok().filter(|v| !v.is_empty()))
             .map(SecretString::from);
 
         Ok(Config {

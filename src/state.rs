@@ -86,6 +86,8 @@ pub struct OpenFinding {
     pub description: String,
     /// 首条评论是否含 high/critical 级别标记（status check 用）
     pub has_high_severity: bool,
+    /// 首条评论的 databaseId（resolve 降级回复用）
+    pub first_comment_id: Option<u64>,
 }
 
 /// 去掉 body 里的全部指纹标记（注入 prompt 前清洗）
@@ -170,12 +172,14 @@ mod tests {
                 fingerprints: vec!["a".into()],
                 description: String::new(),
                 has_high_severity: false,
+                first_comment_id: None,
             },
             OpenFinding {
                 thread_id: "t2".into(),
                 fingerprints: vec!["b".into(), "c".into()],
                 description: String::new(),
                 has_high_severity: true,
+                first_comment_id: None,
             },
         ];
         let resolved: BTreeSet<String> = ["a".to_string(), "b".to_string()].into_iter().collect();
