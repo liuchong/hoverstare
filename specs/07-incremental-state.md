@@ -51,7 +51,12 @@ pub fn fingerprint(file: &str, line_content: &str, title: &str) -> String
    - 模型按指纹粒度输出 `resolved_finding_ids`；**服务端**仅在一线程的全部
      指纹都被判修复时才 resolve 该线程（`state::resolvable_threads`）；
 4. 发布新 review 之后，对 `resolved_finding_ids` 逐个调 `resolve_review_thread`；
-   单个失败记 warning 继续。
+   **GITHUB_TOKEN 的平台限制**（GitHub 已知问题：默认 token 调
+   `resolveReviewThread` 常返回 "Resource not accessible by integration"，即使
+   有 `pull-requests: write`）——resolve 失败时降级为**线程内回复**
+   "✅ Bugbot 已确认修复"（REST replies 端点，默认 token 可用）。
+   配置 `GH_PAT`（classic PAT，`repo` scope）后可走完整 resolve 路径——
+   客户端凭据 GH_PAT 优先于 GITHUB_TOKEN（spec 01）。
 
 ## 不重复评论
 
