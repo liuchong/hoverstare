@@ -14,7 +14,7 @@
     <a href="https://license.pub/1pl/"><img src="https://img.shields.io/badge/license-1PL-green" alt="license 1PL" /></a>
   </p>
   <p align="center">
-    <a href="README.md">English</a> ·
+    <a href="../../README.md">English</a> ·
     <a href="README.zh-CN.md">简体中文</a> ·
     <b>Русский</b> ·
     <a href="README.fr.md">Français</a> ·
@@ -151,27 +151,32 @@ set_temperature = true                # false для endpoint'ов, приним
 instructions = ""                     # фокус ревью команды, добавляется в системный промпт
 ```
 
-## Опционально: фирменная личность (hoverstare[bot])
+## Опционально: фирменная личность (публикации от вашего бота)
 
-По умолчанию ревью публикуются от `github-actions[bot]` (ограничение
-`GITHUB_TOKEN` — имя и аватар не настраиваются). Чтобы публиковать от
-**hoverstare[bot]** с аватаром проекта:
+По умолчанию ревью публикуются от `github-actions[bot]` — ограничение
+`GITHUB_TOKEN`, и это **рекомендуемый режим для большинства** (без лишней настройки).
 
-1. Установите GitHub App **HoverStare** в ваш репозиторий
-2. В настройках App скопируйте **App ID** и сгенерируйте **private key**
-3. Сохраните их как секреты `HOVERSTARE_APP_ID` и `HOVERSTARE_APP_PRIVATE_KEY`
-4. Передайте их в action:
+Хотите фирменную личность? Зарегистрируйте **собственное** GitHub App
+(5 минут, сервер не нужен — обмен токенов происходит внутри GitHub Actions):
+
+1. Создайте GitHub App в *Settings → Developer settings → GitHub Apps*
+   (webhook **выключен**; права: contents read, pull-requests write,
+   issues write, commit statuses write) и установите в репозиторий
+2. Сохраните App ID и private key как секреты `APP_ID` / `APP_PRIVATE_KEY`
+3. Передайте:
 
 ```yaml
       - uses: liuchong/hoverstare@v0
         with:
-          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
-          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-> Бонус: installation token приложения не подвержен ограничению
-> `resolveReviewThread` у `GITHUB_TOKEN` — исправленные треды закрываются
-> полностью (без `GH_PAT`).
+Ревью будут публиковаться от **ваш-app[bot]**, а `resolveReviewThread`
+работает без ограничения `GITHUB_TOKEN` (без `GH_PAT`).
+
+> Нулевая настройка личности `hoverstare[bot]` для всех — в планах как
+> опциональный self-hosted сервис `hoverstare serve`.
 
 ## Команды `@hoverstare`
 

@@ -14,7 +14,7 @@
     <a href="https://license.pub/1pl/"><img src="https://img.shields.io/badge/license-1PL-green" alt="license 1PL" /></a>
   </p>
   <p align="center">
-    <a href="README.md">English</a> ·
+    <a href="../../README.md">English</a> ·
     <a href="README.zh-CN.md">简体中文</a> ·
     <a href="README.ru.md">Русский</a> ·
     <b>Français</b> ·
@@ -153,27 +153,32 @@ set_temperature = true                # false pour les endpoints n'acceptant que
 instructions = ""                     # focus de revue de l'équipe, injecté dans le prompt système
 ```
 
-## Option : identité de marque (hoverstare[bot])
+## Option : identité de marque (publication sous votre bot)
 
-Par défaut, les revues sont publiées en tant que `github-actions[bot]`
-(limitation du `GITHUB_TOKEN` — nom et avatar non personnalisables). Pour
-publier en tant que **hoverstare[bot]** avec l'avatar du projet :
+Par défaut, les revues sont publiées en `github-actions[bot]` — limitation du
+`GITHUB_TOKEN`, et **c'est le mode recommandé pour la plupart** (zéro config).
 
-1. Installez la GitHub App **HoverStare** sur votre dépôt
-2. Dans les paramètres de l'App, copiez l'**App ID** et générez une **clé privée**
-3. Ajoutez-les comme secrets `HOVERSTARE_APP_ID` et `HOVERSTARE_APP_PRIVATE_KEY`
-4. Passez-les à l'action :
+Vous voulez une identité de marque ? Enregistrez **votre propre** GitHub App
+(5 minutes, sans serveur — l'échange de jetons a lieu dans GitHub Actions) :
+
+1. Créez une GitHub App dans *Settings → Developer settings → GitHub Apps*
+   (webhook **désactivé** ; permissions : contents read, pull-requests write,
+   issues write, commit statuses write) et installez-la sur votre dépôt
+2. Ajoutez son App ID et sa clé privée comme secrets `APP_ID` / `APP_PRIVATE_KEY`
+3. Passez-les :
 
 ```yaml
       - uses: liuchong/hoverstare@v0
         with:
-          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
-          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-> Bonus : un installation token d'App n'est pas soumis à la limitation
-> `resolveReviewThread` du `GITHUB_TOKEN` — les fils corrigés sont résolus
-> complètement (plus besoin de `GH_PAT`).
+Les revues sont alors publiées en **votre-app[bot]**, et `resolveReviewThread`
+fonctionne sans la limitation du `GITHUB_TOKEN` (pas besoin de `GH_PAT`).
+
+> L'identité `hoverstare[bot]` sans configuration pour tous est prévue comme
+> service webhook auto-hébergeable optionnel `hoverstare serve`.
 
 ## Commandes `@hoverstare`
 

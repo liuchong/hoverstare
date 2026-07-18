@@ -15,11 +15,11 @@
   </p>
   <p align="center">
     <b>English</b> ·
-    <a href="README.zh-CN.md">简体中文</a> ·
-    <a href="README.ru.md">Русский</a> ·
-    <a href="README.fr.md">Français</a> ·
-    <a href="README.de.md">Deutsch</a> ·
-    <a href="README.es.md">Español</a>
+    <a href="docs/readme/README.zh-CN.md">简体中文</a> ·
+    <a href="docs/readme/README.ru.md">Русский</a> ·
+    <a href="docs/readme/README.fr.md">Français</a> ·
+    <a href="docs/readme/README.de.md">Deutsch</a> ·
+    <a href="docs/readme/README.es.md">Español</a>
   </p>
 </p>
 
@@ -151,27 +151,33 @@ set_temperature = true                # false for endpoints that only accept def
 instructions = ""                     # team-specific review focus, injected into the system prompt
 ```
 
-## Optional: brand identity (hoverstare[bot])
+## Optional: brand identity (posts as your own bot)
 
-By default, reviews post as `github-actions[bot]` (a `GITHUB_TOKEN` limitation
-— the name/avatar can't be customized). To post as **hoverstare[bot]** with the
-project avatar:
+By default, reviews post as `github-actions[bot]` — that's a `GITHUB_TOKEN`
+limitation, and **it's the recommended mode for most users** (zero extra setup).
 
-1. Install the **HoverStare** GitHub App on your repo
-2. In the App settings, copy the **App ID** and generate a **private key**
-3. Add them as secrets `HOVERSTARE_APP_ID` and `HOVERSTARE_APP_PRIVATE_KEY`
-4. Pass them to the action:
+Want a branded bot identity? Register **your own** GitHub App (5 minutes, no
+server needed — token exchange happens inside GitHub Actions) and pass its
+credentials to the action:
+
+1. Create a GitHub App at *Settings → Developer settings → GitHub Apps*
+   (webhook **off**; permissions: contents read, pull-requests write,
+   issues write, commit statuses write), install it on your repo
+2. Add its App ID and private key as secrets `APP_ID` / `APP_PRIVATE_KEY`
+3. Pass them:
 
 ```yaml
       - uses: liuchong/hoverstare@v0
         with:
-          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
-          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-> Bonus: an App installation token is not affected by the `resolveReviewThread`
-> limitation of `GITHUB_TOKEN` — fixed threads get fully resolved
-> (no `GH_PAT` needed).
+Reviews then post as **your-app-name[bot]**, and `resolveReviewThread` works
+without the `GITHUB_TOKEN` limitation (no `GH_PAT` needed).
+
+> **Zero-config `hoverstare[bot]` identity** for everyone is on the roadmap as
+> an optional self-hostable `hoverstare serve` webhook service.
 
 ## `@hoverstare` commands
 

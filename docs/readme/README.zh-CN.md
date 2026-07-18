@@ -14,7 +14,7 @@
     <a href="https://license.pub/1pl/"><img src="https://img.shields.io/badge/license-1PL-green" alt="license 1PL" /></a>
   </p>
   <p align="center">
-    <a href="README.md">English</a> ·
+    <a href="../../README.md">English</a> ·
     <b>简体中文</b> ·
     <a href="README.ru.md">Русский</a> ·
     <a href="README.fr.md">Français</a> ·
@@ -140,26 +140,32 @@ set_temperature = true                # 端点只接受默认温度时置 false
 instructions = ""                     # 团队特定关注点，注入系统提示
 ```
 
-## 可选：品牌身份（hoverstare[bot]）
+## 可选：品牌身份（以你自己的 bot 发布）
 
-默认情况下 review 以 `github-actions[bot]` 身份发布（`GITHUB_TOKEN` 的限制，
-名字和头像不可定制）。要以 **hoverstare[bot]** 身份（带项目头像）发布：
+默认情况下 review 以 `github-actions[bot]` 发布——这是 `GITHUB_TOKEN` 的限制，
+也是**推荐给大多数用户的模式**（零额外配置）。
 
-1. 在你的仓库安装 **HoverStare** GitHub App
-2. 在 App 设置页复制 **App ID** 并生成 **private key**
-3. 把它们存为 secrets `HOVERSTARE_APP_ID` 和 `HOVERSTARE_APP_PRIVATE_KEY`
-4. 传给 action：
+想要品牌身份？注册**你自己的** GitHub App（5 分钟，无需服务器——token 交换
+发生在 GitHub Actions 内部），把凭据传给 action：
+
+1. 在 *Settings → Developer settings → GitHub Apps* 创建 App
+   （webhook **关闭**；权限：contents read、pull-requests write、
+   issues write、commit statuses write），并安装到你的仓库
+2. 把它的 App ID 和 private key 存为 secrets `APP_ID` / `APP_PRIVATE_KEY`
+3. 传入：
 
 ```yaml
       - uses: liuchong/hoverstare@v0
         with:
-          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
-          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-> 附带好处：App installation token 不受 `GITHUB_TOKEN` 的
-> `resolveReviewThread` 平台限制——修复的线程会被真正 resolve
->（不再需要 `GH_PAT`）。
+此后 review 以**你的 App 名[bot]** 发布，且 `resolveReviewThread` 不受
+`GITHUB_TOKEN` 平台限制（无需 `GH_PAT`）。
+
+> 面向所有人的零配置 `hoverstare[bot]` 身份，规划为可选自部署的
+> `hoverstare serve` webhook 服务。
 
 ## `@hoverstare` 命令
 
