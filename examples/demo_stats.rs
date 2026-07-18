@@ -5,6 +5,9 @@ fn total(values: &[u64]) -> u64 {
 }
 
 fn average(values: &[u64]) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
     total(values) / values.len() as u64
 }
 
@@ -26,5 +29,5 @@ fn main() {
     println!("average={}", average(&data));
     println!("first={}", first(&data));
     println!("sum_all={}", sum_all(&data));
-    println!("average(empty)={}", average(&[]));
+    println!("average(empty)={}", average(&[])); // 已修复：空切片返回 0
 }
