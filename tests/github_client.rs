@@ -411,3 +411,107 @@ async fn reply_to_review_comment_works() {
         .unwrap();
     m.assert_async().await;
 }
+
+// ---------------------------------------------------------------------------
+// 终态 status check（spec 07：跳过路径也必须落地，否则 required check 死锁）
+// ---------------------------------------------------------------------------
+
+fn cfg_with_status_checks(status_checks: bool) -> hoverstare::config::Config {
+    unsafe {
+        std::env::set_var("OPENAI_API_KEY", "test");
+    }
+    let mut c = hoverstare::config::Config::load().unwrap();
+    c.status_checks = status_checks;
+    c
+}
+
+#[tokio::test]
+async fn skipped_run_still_posts_status_check() {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET).path("/repos/o/r/pulls/1");
+            then.status(200).json_body(serde_json::json!({
+                "number": 1,
+                "head": {"sha": "abc123", "ref": "feat"},
+                "base": {"sha": "def456", "ref": "main"},
+                "draft": true,
+                "user": {"login": "dev"}
+            }));
+        })
+        .await;
+    let status_mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/repos/o/r/statuses/abc123")
+                .body_includes(r#""context":"hoverstare""#)
+                .body_includes(r#""state":"success""#)
+                .body_includes("跳过");
+            then.status(200).json_body(serde_json::json!({"id": 1}));
+        })
+        .await;
+
+    unsafe {
+        std::env::set_var("GITHUB_API_URL", server.base_url());
+    }
+    let outcome = hoverstare::orchestrator::run_review(
+        &cfg_with_status_checks(true),
+        &hoverstare::cli::ReviewArgs {
+            pr: Some(1),
+            repo: Some("o/r".into()),
+            dry_run: false,
+        },
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        outcome,
+        hoverstare::orchestrator::Outcome::Skipped(_)
+    ));
+    status_mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn no_status_check_when_disabled() {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET).path("/repos/o/r/pulls/1");
+            then.status(200).json_body(serde_json::json!({
+                "number": 1,
+                "head": {"sha": "abc123", "ref": "feat"},
+                "base": {"sha": "def456", "ref": "main"},
+                "draft": true,
+                "user": {"login": "dev"}
+            }));
+        })
+        .await;
+    // 不写 status 的 mock：任何 statuses 调用都视为意外
+    let status_mock = server
+        .mock_async(|when, then| {
+            when.method(POST).path("/repos/o/r/statuses/abc123");
+            then.status(500);
+        })
+        .await;
+
+    unsafe {
+        std::env::set_var("GITHUB_API_URL", server.base_url());
+    }
+    let outcome = hoverstare::orchestrator::run_review(
+        &cfg_with_status_checks(false),
+        &hoverstare::cli::ReviewArgs {
+            pr: Some(1),
+            repo: Some("o/r".into()),
+            dry_run: false,
+        },
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        outcome,
+        hoverstare::orchestrator::Outcome::Skipped(_)
+    ));
+    status_mock.assert_calls_async(0).await;
+}

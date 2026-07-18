@@ -66,12 +66,14 @@ pub fn fingerprint(file: &str, line_content: &str, title: &str) -> String
 
 ## Status checks（`config.status_checks = true` 时）
 
-每次运行结束写两个 commit status（target = head_sha）：
+**每次运行到达终态都写**两个 commit status（target = head_sha）——包括跳过与
+失败路径，否则 required check 永不到达会死锁合并（实测教训：CI/配置类 PR 因
+`.github/**` 被过滤而跳过时，检查也必须落地）：
 
 | context | state 规则 |
 |---|---|
-| `hoverstare` | 运行完成 → success；分析失败 → error（配合 fail-open，不阻塞合并） |
-| `hoverstare-findings` | 本次 + 未关闭 findings 中无 high/critical → success；否则 failure |
+| `hoverstare` | 审查完成或按规则跳过 → success；分析失败且 fail-open（默认）→ success（描述注明未阻塞）；分析失败且 `fail_closed = true` → error |
+| `hoverstare-findings` | 本次 + 未关闭 findings 中无 high/critical → success；否则 failure；分析未完成的失败路径不写此 check |
 
 可被 branch protection 设为必需检查。
 

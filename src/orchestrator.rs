@@ -32,6 +32,52 @@ fn fail_or_open(cfg: &Config, e: anyhow::Error) -> anyhow::Result<Outcome> {
     }
 }
 
+/// 所有终态（含跳过/失败路径）都写 `hoverstare` status check（spec 07：
+/// 否则 required check 永不到达会死锁合并）
+async fn post_terminal_status(
+    gh: &GitHubClient,
+    repo: &Repo,
+    head_sha: &str,
+    cfg: &Config,
+    analysis_ok: bool,
+    note: &str,
+) {
+    if !cfg.status_checks {
+        return;
+    }
+    let state = if analysis_ok || !cfg.fail_closed {
+        StatusState::Success
+    } else {
+        StatusState::Error
+    };
+    if let Err(e) = gh
+        .create_status(
+            repo,
+            head_sha,
+            &NewStatus {
+                context: "hoverstare",
+                state,
+                description: note.chars().take(140).collect(),
+            },
+        )
+        .await
+    {
+        tracing::warn!("写 status check hoverstare 失败: {e}");
+    }
+}
+
+/// 跳过路径的统一收口：先写终态 check 再返回
+async fn skip_outcome(
+    cfg: &Config,
+    gh: &GitHubClient,
+    repo: &Repo,
+    head_sha: &str,
+    reason: String,
+) -> Outcome {
+    post_terminal_status(gh, repo, head_sha, cfg, true, &format!("跳过：{reason}")).await;
+    Outcome::Skipped(reason)
+}
+
 /// GitHub Actions 日志分组（本地运行时为 no-op）
 fn gha_group(name: &str) {
     if std::env::var("GITHUB_ACTIONS").is_ok() {
@@ -63,11 +109,19 @@ pub async fn run_review(
     };
 
     // 跳过条件（spec 01）
+    let head_sha = pr.head.sha.clone();
     if pr.draft && !cfg.review_drafts {
-        return Ok(Outcome::Skipped("draft PR".into()));
+        return Ok(skip_outcome(cfg, &gh, &repo, &head_sha, "draft PR".into()).await);
     }
     if pr.user.login.ends_with("[bot]") {
-        return Ok(Outcome::Skipped(format!("bot 作者: {}", pr.user.login)));
+        return Ok(skip_outcome(
+            cfg,
+            &gh,
+            &repo,
+            &head_sha,
+            format!("bot 作者: {}", pr.user.login),
+        )
+        .await);
     }
 
     // 增量模式判定（spec 07）：找最近一次含 hoverstare-meta 的 review
@@ -89,7 +143,7 @@ pub async fn run_review(
         Err(e) => return fail_or_open(cfg, anyhow::anyhow!("获取 diff 失败: {e}")),
     };
     if full_diff.trim().is_empty() {
-        return Ok(Outcome::Skipped("空 diff".into()));
+        return Ok(skip_outcome(cfg, &gh, &repo, &head_sha, "空 diff".into()).await);
     }
     let (full_filtered, full_excluded) = diff::filter_text(&full_diff, &cfg.ignore);
     let full_trunc = diff::truncate_text(&full_filtered, cfg.max_diff_kb);
@@ -103,7 +157,14 @@ pub async fn run_review(
             Err(e) => return fail_or_open(cfg, anyhow::anyhow!("获取增量 diff 失败: {e}")),
         };
         if delta.trim().is_empty() {
-            return Ok(Outcome::Skipped("自上次审查以来无新增变更".into()));
+            return Ok(skip_outcome(
+                cfg,
+                &gh,
+                &repo,
+                &head_sha,
+                "自上次审查以来无新增变更".into(),
+            )
+            .await);
         }
         let (filtered, excluded) = diff::filter_text(&delta, &cfg.ignore);
         let t = diff::truncate_text(&filtered, cfg.max_diff_kb);
@@ -118,20 +179,25 @@ pub async fn run_review(
 
     let analysis_parsed = ParsedDiff::parse(&analysis_text);
     if analysis_parsed.files.is_empty() {
-        return Ok(Outcome::Skipped(if excluded_files > 0 {
+        let reason = if excluded_files > 0 {
             format!("全部变更被规则过滤（{excluded_files} 个文件）")
         } else {
             "diff 中无可审查的变更".to_string()
-        }));
+        };
+        return Ok(skip_outcome(cfg, &gh, &repo, &head_sha, reason).await);
     }
     if analysis_text.len() > cfg.max_diff_kb * 1024 * 2 {
-        return fail_or_open(
+        let outcome = fail_or_open(
             cfg,
             anyhow::anyhow!(
                 "diff 超出预算 2 倍（{} KB），放弃分析",
                 analysis_text.len() / 1024
             ),
-        );
+        )?;
+        if matches!(outcome, Outcome::AnalysisFailed(_)) {
+            post_terminal_status(&gh, &repo, &head_sha, cfg, false, "diff 超预算放弃分析").await;
+        }
+        return Ok(outcome);
     }
     tracing::info!(
         "diff: {} 个文件（{}模式，过滤 {} 个，截断 {} 个），{} KB",
@@ -175,7 +241,12 @@ pub async fn run_review(
         Ok(a) => a,
         Err(e) => {
             gha_group_end();
-            return fail_or_open(cfg, e.context("分析失败"));
+            let outcome = fail_or_open(cfg, e.context("分析失败"))?;
+            if matches!(outcome, Outcome::AnalysisFailed(_)) {
+                post_terminal_status(&gh, &repo, &head_sha, cfg, false, "分析失败（fail-open）")
+                    .await;
+            }
+            return Ok(outcome);
         }
     };
     tracing::info!(
