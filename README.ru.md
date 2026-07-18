@@ -144,6 +144,28 @@ set_temperature = true                # false для endpoint'ов, приним
 instructions = ""                     # фокус ревью команды, добавляется в системный промпт
 ```
 
+## Опционально: фирменная личность (hoverstare[bot])
+
+По умолчанию ревью публикуются от `github-actions[bot]` (ограничение
+`GITHUB_TOKEN` — имя и аватар не настраиваются). Чтобы публиковать от
+**hoverstare[bot]** с аватаром проекта:
+
+1. Установите GitHub App **HoverStare** в ваш репозиторий
+2. В настройках App скопируйте **App ID** и сгенерируйте **private key**
+3. Сохраните их как секреты `HOVERSTARE_APP_ID` и `HOVERSTARE_APP_PRIVATE_KEY`
+4. Передайте их в action:
+
+```yaml
+      - uses: liuchong/hoverstare@v0
+        with:
+          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
+          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+```
+
+> Бонус: installation token приложения не подвержен ограничению
+> `resolveReviewThread` у `GITHUB_TOKEN` — исправленные треды закрываются
+> полностью (без `GH_PAT`).
+
 ## Команды `@hoverstare`
 
 В комментариях к PR (только для коллабораторов репозитория):

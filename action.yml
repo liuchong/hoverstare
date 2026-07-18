@@ -11,6 +11,14 @@ inputs:
     description: "hoverstare 版本（GitHub Release tag，如 v0.0.3）"
     required: false
     default: "v0.0.3"
+  app_id:
+    description: "可选：HoverStare GitHub App 的 App ID（品牌身份模式，评论显示 hoverstare[bot]）"
+    required: false
+    default: ""
+  app_private_key:
+    description: "可选：HoverStare GitHub App 的 private key（与 app_id 配套）"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -49,10 +57,20 @@ runs:
         tar xzf hoverstare.tar.gz
         chmod +x hoverstare
 
+    # 品牌身份模式：提供 app_id 时，用 GitHub App installation token 发评论
+    # （显示 hoverstare[bot] 而非 github-actions[bot]）
+    - name: Create App token (brand identity)
+      if: inputs.app_id != ''
+      id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ inputs.app_id }}
+        private-key: ${{ inputs.app_private_key }}
+
     - name: Run hoverstare
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_TOKEN: ${{ inputs.app_id != '' && steps.app-token.outputs.token || github.token }}
       run: |
         set -euo pipefail
         case "${{ github.event_name }}" in

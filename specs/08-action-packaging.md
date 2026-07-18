@@ -45,7 +45,13 @@ jobs:
 
 ## action.yml（composite）
 
-inputs：`version`（默认 `v1`）、`args`（默认 `review`，mention 事件时内部自动切换）。
+inputs：
+
+- `version`（默认 `v1`）；
+- `app_id` / `app_private_key`（可选）：提供时先用 `actions/create-github-app-token`
+  换 installation token 再运行——评论以 `hoverstare[bot]` 品牌身份发布
+  （默认 `GITHUB_TOKEN` 只能以 `github-actions[bot]` 发布），且 App token 不受
+  `resolveReviewThread` 平台限制（spec 07 的完整 resolve 路径，无需 GH_PAT）。
 
 步骤：
 

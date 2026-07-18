@@ -144,6 +144,28 @@ set_temperature = true                # false for endpoints that only accept def
 instructions = ""                     # team-specific review focus, injected into the system prompt
 ```
 
+## Optional: brand identity (hoverstare[bot])
+
+By default, reviews post as `github-actions[bot]` (a `GITHUB_TOKEN` limitation
+— the name/avatar can't be customized). To post as **hoverstare[bot]** with the
+project avatar:
+
+1. Install the **HoverStare** GitHub App on your repo
+2. In the App settings, copy the **App ID** and generate a **private key**
+3. Add them as secrets `HOVERSTARE_APP_ID` and `HOVERSTARE_APP_PRIVATE_KEY`
+4. Pass them to the action:
+
+```yaml
+      - uses: liuchong/hoverstare@v0
+        with:
+          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
+          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+```
+
+> Bonus: an App installation token is not affected by the `resolveReviewThread`
+> limitation of `GITHUB_TOKEN` — fixed threads get fully resolved
+> (no `GH_PAT` needed).
+
 ## `@hoverstare` commands
 
 Post in a PR (repo collaborators only):

@@ -146,6 +146,28 @@ set_temperature = true                # false pour les endpoints n'acceptant que
 instructions = ""                     # focus de revue de l'équipe, injecté dans le prompt système
 ```
 
+## Option : identité de marque (hoverstare[bot])
+
+Par défaut, les revues sont publiées en tant que `github-actions[bot]`
+(limitation du `GITHUB_TOKEN` — nom et avatar non personnalisables). Pour
+publier en tant que **hoverstare[bot]** avec l'avatar du projet :
+
+1. Installez la GitHub App **HoverStare** sur votre dépôt
+2. Dans les paramètres de l'App, copiez l'**App ID** et générez une **clé privée**
+3. Ajoutez-les comme secrets `HOVERSTARE_APP_ID` et `HOVERSTARE_APP_PRIVATE_KEY`
+4. Passez-les à l'action :
+
+```yaml
+      - uses: liuchong/hoverstare@v0
+        with:
+          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
+          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+```
+
+> Bonus : un installation token d'App n'est pas soumis à la limitation
+> `resolveReviewThread` du `GITHUB_TOKEN` — les fils corrigés sont résolus
+> complètement (plus besoin de `GH_PAT`).
+
 ## Commandes `@hoverstare`
 
 Dans les commentaires d'une PR (collaborateurs du dépôt uniquement) :

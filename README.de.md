@@ -147,6 +147,28 @@ set_temperature = true                # false für Endpoints, die nur Standard-T
 instructions = ""                     # team-spezifischer Review-Fokus, wird in den Systemprompt injiziert
 ```
 
+## Optional: Markenidentität (hoverstare[bot])
+
+Standardmäßig werden Reviews als `github-actions[bot]` veröffentlicht
+(eine `GITHUB_TOKEN`-Einschränkung — Name und Avatar sind nicht anpassbar).
+Um als **hoverstare[bot]** mit Projekt-Avatar zu veröffentlichen:
+
+1. Installiere die **HoverStare** GitHub App in deinem Repo
+2. Kopiere in den App-Einstellungen die **App ID** und generiere einen **private key**
+3. Hinterlege sie als Secrets `HOVERSTARE_APP_ID` und `HOVERSTARE_APP_PRIVATE_KEY`
+4. Übergib sie an die Action:
+
+```yaml
+      - uses: liuchong/hoverstare@v0
+        with:
+          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
+          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+```
+
+> Bonus: Ein App-Installation-Token unterliegt nicht der
+> `resolveReviewThread`-Einschränkung des `GITHUB_TOKEN` — behobene Threads
+> werden vollständig aufgelöst (kein `GH_PAT` nötig).
+
 ## `@hoverstare`-Befehle
 
 In einem PR posten (nur Repo-Kollaboratoren):

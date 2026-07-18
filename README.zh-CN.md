@@ -133,6 +133,27 @@ set_temperature = true                # 端点只接受默认温度时置 false
 instructions = ""                     # 团队特定关注点，注入系统提示
 ```
 
+## 可选：品牌身份（hoverstare[bot]）
+
+默认情况下 review 以 `github-actions[bot]` 身份发布（`GITHUB_TOKEN` 的限制，
+名字和头像不可定制）。要以 **hoverstare[bot]** 身份（带项目头像）发布：
+
+1. 在你的仓库安装 **HoverStare** GitHub App
+2. 在 App 设置页复制 **App ID** 并生成 **private key**
+3. 把它们存为 secrets `HOVERSTARE_APP_ID` 和 `HOVERSTARE_APP_PRIVATE_KEY`
+4. 传给 action：
+
+```yaml
+      - uses: liuchong/hoverstare@v0
+        with:
+          app_id: ${{ secrets.HOVERSTARE_APP_ID }}
+          app_private_key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+```
+
+> 附带好处：App installation token 不受 `GITHUB_TOKEN` 的
+> `resolveReviewThread` 平台限制——修复的线程会被真正 resolve
+>（不再需要 `GH_PAT`）。
+
 ## `@hoverstare` 命令
 
 在 PR 评论中使用（仅 repo collaborator 可触发）：
