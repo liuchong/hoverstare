@@ -17,6 +17,10 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl
 
+      # aws-lc-sys（rustls）需要 musl 交叉编译器（spec 08）
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
       - name: Build musl binary
         run: |
           cargo build --release --target x86_64-unknown-linux-musl
