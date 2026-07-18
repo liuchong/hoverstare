@@ -1,0 +1,63 @@
+name: "Bugbot"
+description: "AI 代码审查：仓库感知的 agentic 审查 + 多路投票降误报，行内评论精确锚定"
+author: "liuchong"
+
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  version:
+    description: "bugbot 版本（GitHub Release tag，如 v0.1.0）"
+    required: false
+    default: "v0.1.0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve platform
+      id: platform
+      shell: bash
+      run: |
+        case "${{ runner.os }}-${{ runner.arch }}" in
+          Linux-X64) target="x86_64-unknown-linux-musl" ;;
+          *) echo "::error::unsupported platform: ${{ runner.os }}-${{ runner.arch }}（v1 仅支持 linux-x64）"; exit 1 ;;
+        esac
+        echo "target=$target" >> "$GITHUB_OUTPUT"
+
+    - name: Cache bugbot binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/bugbot-bin
+        key: bugbot-${{ inputs.version }}-${{ steps.platform.outputs.target }}
+
+    - name: Download bugbot
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        TARGET: ${{ steps.platform.outputs.target }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${{ runner.temp }}/bugbot-bin"
+        cd "${{ runner.temp }}/bugbot-bin"
+        base="https://github.com/liuchong/bugbot/releases/download/${VERSION}"
+        curl -fsSL "${base}/bugbot-${VERSION}-${TARGET}.tar.gz" -o bugbot.tar.gz
+        curl -fsSL "${base}/bugbot-${VERSION}-${TARGET}.tar.gz.sha256" -o bugbot.sha256
+        echo "$(cat bugbot.sha256)  bugbot.tar.gz" | sha256sum -c -
+        tar xzf bugbot.tar.gz
+        chmod +x bugbot
+
+    - name: Run bugbot
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        case "${{ github.event_name }}" in
+          issue_comment|pull_request_review_comment)
+            "${{ runner.temp }}/bugbot-bin/bugbot" mention ;;
+          *)
+            "${{ runner.temp }}/bugbot-bin/bugbot" review ;;
+        esac

@@ -1,0 +1,5 @@
+.env
+.env.*
+*.env
+spikes/rig-kimi-probe/target/
+/target/

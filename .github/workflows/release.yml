@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-musl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Build musl binary
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl
+          strip target/x86_64-unknown-linux-musl/release/bugbot
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          name="bugbot-${GITHUB_REF_NAME}-x86_64-unknown-linux-musl"
+          cd target/x86_64-unknown-linux-musl/release
+          tar czf "../../../dist/${name}.tar.gz" bugbot
+          cd ../../../dist
+          sha256sum "${name}.tar.gz" | awk '{print $1}' > "${name}.tar.gz.sha256"
+          ls -la
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  # 大版本浮动 tag（如 v1 指向最新 v1.x.y），用户侧 @v1 自动跟进修复版
+  move-major-tag:
+    needs: build-musl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Move major tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          version="${GITHUB_REF_NAME}"
+          major="${version%%.*}"
+          if [ "$major" = "$version" ]; then
+            echo "非 x.y.z 形式 tag，跳过"
+            exit 0
+          fi
+          git tag -fa "$major" -m "move $major to $version"
+          git push -f origin "$major"

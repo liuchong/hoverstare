@@ -1,0 +1,5 @@
+# 本仓库自举（dogfooding）配置
+model = "kimi-for-coding"
+reformat_model = "kimi-for-coding-highspeed"
+# kimi-for-coding 只接受 temperature=1，不传该字段用默认值
+set_temperature = false
