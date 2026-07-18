@@ -1,4 +1,4 @@
-//! CLI 定义与入口逻辑（spec 01）
+//! CLI definition and entry-point logic (spec 01)
 
 use clap::{Args, Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
@@ -11,44 +11,44 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 
-    /// debug 日志
+    /// debug logging
     #[arg(short, long, global = true)]
     pub verbose: bool,
 }
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// 审查一个 PR（GitHub Actions 主入口）
+    /// Review a PR (main GitHub Actions entry point)
     Review(ReviewArgs),
-    /// 处理一条 @hoverstare 评论（M6）
+    /// Handle an @hoverstare comment (M6)
     Mention,
-    /// 以 webhook 服务运行（可选自部署，spec 10）
+    /// Run as a webhook service (optional self-hosted, spec 10)
     Serve(ServeArgs),
 }
 
 #[derive(Args)]
 pub struct ServeArgs {
-    /// 监听端口（也可由 PORT env 覆盖）
+    /// Listen port (can also be overridden by the PORT env var)
     #[arg(long)]
     pub port: Option<u16>,
 }
 
 #[derive(Args)]
 pub struct ReviewArgs {
-    /// 覆盖事件中的 PR 编号（本地调试用）
+    /// Override the PR number from the event (for local debugging)
     #[arg(long)]
     pub pr: Option<u64>,
 
-    /// 覆盖仓库（owner/repo，本地调试用）
+    /// Override the repository (owner/repo, for local debugging)
     #[arg(long)]
     pub repo: Option<String>,
 
-    /// 完整执行分析但不发布，review JSON 打到 stdout
+    /// Run the full analysis without publishing; print the review JSON to stdout
     #[arg(long)]
     pub dry_run: bool,
 }
 
-/// CLI 主入口（hoverstare 与 bugbot 别名二进制共用）
+/// CLI main entry point (shared by the hoverstare and bugbot alias binaries)
 pub async fn run() {
     let args = Cli::parse();
 
@@ -71,10 +71,10 @@ pub async fn run() {
     std::process::exit(code);
 }
 
-/// 配置错误属于需要用户立即修正的问题 → exit 1（spec 01）
+/// Config errors are problems the user must fix immediately -> exit 1 (spec 01)
 fn load_config() -> Result<config::Config, i32> {
     config::Config::load().map_err(|e| {
-        tracing::error!("配置错误: {e:#}");
+        tracing::error!("config error: {e:#}");
         1
     })
 }
@@ -88,14 +88,14 @@ async fn run_review(args: ReviewArgs) -> i32 {
         Ok(outcome) => {
             use orchestrator::Outcome::*;
             match outcome {
-                Skipped(reason) => tracing::info!("跳过: {reason}"),
+                Skipped(reason) => tracing::info!("skipped: {reason}"),
                 Published { inline_comments } => {
-                    tracing::info!("✅ review 已发布（{inline_comments} 条行内评论）")
+                    tracing::info!("✅ review published ({inline_comments} inline comments)")
                 }
-                DryRun => tracing::info!("✅ dry-run 完成（未发布）"),
+                DryRun => tracing::info!("✅ dry-run complete (not published)"),
                 AnalysisFailed(reason) => {
-                    // fail-open：分析失败不阻塞 CI（spec 01）
-                    tracing::warn!("分析失败（fail-open，exit 0）: {reason}");
+                    // fail-open: analysis failure does not block CI (spec 01)
+                    tracing::warn!("analysis failed (fail-open, exit 0): {reason}");
                 }
             }
             0
@@ -116,7 +116,7 @@ async fn run_serve(args: ServeArgs) -> i32 {
     match crate::serve::run(port).await {
         Ok(()) => 0,
         Err(e) => {
-            tracing::error!("serve 启动失败: {e:#}");
+            tracing::error!("serve failed to start: {e:#}");
             1
         }
     }
@@ -131,14 +131,14 @@ async fn run_mention() -> i32 {
         Ok(outcome) => {
             use orchestrator::Outcome::*;
             match outcome {
-                Skipped(reason) => tracing::info!("跳过: {reason}"),
-                _ => tracing::info!("✅ mention 处理完成"),
+                Skipped(reason) => tracing::info!("skipped: {reason}"),
+                _ => tracing::info!("✅ mention handled"),
             }
             0
         }
         Err(e) => {
-            // mention 命令失败同样 fail-open（spec 09 遵循相同契约）
-            tracing::warn!("mention 处理失败（fail-open，exit 0）: {e:#}");
+            // mention command failures are also fail-open (spec 09 follows the same contract)
+            tracing::warn!("mention handling failed (fail-open, exit 0): {e:#}");
             0
         }
     }

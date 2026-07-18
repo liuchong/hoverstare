@@ -1,7 +1,9 @@
-//! Agent backend 抽象（spec 04）
+//! Agent backend abstraction (spec 04)
 //!
-//! `AgentBackend` 是框架切换点：v1 由 `rig_backend::RigBackend` 实现，
-//! 后续可替换为自研 NativeBackend。trait 及请求/响应类型不含任何框架类型。
+//! `AgentBackend` is the framework switch point: v1 is implemented by
+//! `rig_backend::RigBackend`, and can later be replaced by a self-built
+//! NativeBackend. The trait and its request/response types contain no
+//! framework types.
 
 pub mod rig_backend;
 pub mod tools;
@@ -9,7 +11,7 @@ pub mod tools;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// 只读工具注册表：None = 无工具的纯单轮模式
+/// Read-only tool registry: None = pure single-turn mode without tools
 #[derive(Debug, Clone, Default)]
 pub struct ToolRegistry {
     pub shared: Option<Arc<tools::ToolShared>>,
@@ -17,9 +19,9 @@ pub struct ToolRegistry {
 
 #[derive(Debug)]
 pub struct ReviewRequest {
-    /// 系统提示：角色 + JSON 契约 + 安全约束
+    /// System prompt: role + JSON contract + safety constraints
     pub system_prompt: String,
-    /// 用户提示：diff + 文件清单 + instructions
+    /// User prompt: diff + file list + instructions
     pub user_prompt: String,
     pub tools: ToolRegistry,
     pub budget: Budget,
@@ -29,18 +31,18 @@ pub struct ReviewRequest {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Budget {
-    /// agentic 循环的工具调用预算（也约束 rig 的最大轮次）
+    /// Tool-call budget for the agentic loop (also bounds rig's max turns)
     pub max_tool_calls: u32,
     pub timeout: Duration,
 }
 
 #[derive(Debug, Default)]
 pub struct ReviewRun {
-    /// 模型最终文本（应为 JSON，但不保证——见 findings 模块的容错解析）
+    /// Final model text (should be JSON, but not guaranteed — see the tolerant parsing in the findings module)
     pub raw_output: String,
-    /// 工具调用轨迹（调试/回放测试用）
+    /// Tool-call trace (for debugging/replay tests)
     pub tool_trace: Vec<ToolCallRecord>,
-    /// M7 启用（成本统计）
+    /// Enabled in M7 (cost accounting)
     #[allow(dead_code)]
     pub usage: Usage,
 }
@@ -54,7 +56,7 @@ pub struct ToolCallRecord {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-#[allow(dead_code)] // M7（成本统计）
+#[allow(dead_code)] // M7 (cost accounting)
 pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -62,9 +64,9 @@ pub struct Usage {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
-    #[error("agent 调用超时（{0:?}）")]
+    #[error("agent call timed out ({0:?})")]
     Timeout(Duration),
-    #[error("agent 调用失败: {0}")]
+    #[error("agent call failed: {0}")]
     Backend(String),
 }
 

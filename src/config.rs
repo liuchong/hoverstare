@@ -1,7 +1,7 @@
-//! 配置加载与校验（spec 01）
+//! Configuration loading and validation (spec 01)
 //!
-//! 合并优先级：CLI flag > 环境变量 > `.github/hoverstare.toml` > 内置默认值。
-//! CLI flag 目前只覆盖 PR/repo 定位（见 cli.rs），不进 Config。
+//! Merge precedence: CLI flag > environment variable > `.github/hoverstare.toml` > built-in defaults.
+//! CLI flags currently only override PR/repo targeting (see cli.rs) and do not enter Config.
 
 use std::path::{Path, PathBuf};
 
@@ -13,31 +13,34 @@ use serde::Deserialize;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub model: String,
-    /// M2（reformat pass 用廉价模型）
+    /// M2 (cheap model for the reformat pass)
     #[allow(dead_code)]
     pub reformat_model: String,
-    /// 多 pass 投票路数（spec 05）
+    /// Number of multi-pass voting lanes (spec 05)
     pub passes: u8,
-    /// 单票 finding 是否过 verifier（spec 05）
+    /// Whether single-vote findings go through the verifier (spec 05)
     pub verify: bool,
     pub severity_threshold: Severity,
     pub ignore: GlobSet,
-    /// M2（大 diff 截断）
+    /// M2 (large diff truncation)
     #[allow(dead_code)]
     pub max_diff_kb: usize,
     pub max_tool_calls: u32,
     pub timeout_secs: u64,
     pub review_drafts: bool,
     pub fail_closed: bool,
-    /// M4（status checks）
+    /// M4 (status checks)
     #[allow(dead_code)]
     pub status_checks: bool,
     pub instructions: String,
-    /// 是否给请求设置 temperature（部分端点只接受默认值，置 false 则不传该字段）
+    /// Whether to set temperature on requests (some endpoints only accept the
+    /// default; when false the field is not sent)
     pub set_temperature: bool,
+    /// Output language (HOVERSTARE_LANGUAGE env > toml language > default en)
+    pub language: crate::i18n::Lang,
     pub github_token: Option<SecretString>,
     pub llm: LlmCredentials,
-    /// M3（工具沙箱根）
+    /// M3 (tool sandbox root)
     pub workspace: PathBuf,
 }
 
@@ -102,7 +105,7 @@ impl From<SeverityToml> for Severity {
 pub enum LlmCredentials {
     Anthropic {
         key: SecretString,
-        /// M2（Anthropic 兼容端点覆盖）
+        /// M2 (Anthropic-compatible endpoint override)
         #[allow(dead_code)]
         base_url: Option<String>,
     },
@@ -112,7 +115,7 @@ pub enum LlmCredentials {
     },
 }
 
-/// `.github/hoverstare.toml` 的文件结构（全部可选）
+/// File structure of `.github/hoverstare.toml` (all optional)
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct TomlConfig {
@@ -130,9 +133,10 @@ struct TomlConfig {
     status_checks: Option<bool>,
     instructions: Option<String>,
     set_temperature: Option<bool>,
+    language: Option<String>,
 }
 
-/// 内置过滤规则（spec 03）：锁文件 / 压缩产物 / CI 目录
+/// Built-in filter rules (spec 03): lockfiles / minified artifacts / CI directories
 const BUILTIN_IGNORE: &[&str] = &[
     "**/Cargo.lock",
     "**/package-lock.json",
@@ -149,8 +153,9 @@ const BUILTIN_IGNORE: &[&str] = &[
 ];
 
 impl Config {
-    /// 按 set_temperature 折算 temperature 参数（不支持自定义温度的端点传 None，
-    /// rig 会省略该字段，用 provider 默认值）
+    /// Convert the temperature argument according to set_temperature (endpoints
+    /// that do not support a custom temperature get None, and rig omits the
+    /// field, using the provider default)
     pub fn temp(&self, t: f64) -> Option<f64> {
         self.set_temperature.then_some(t)
     }
@@ -169,12 +174,12 @@ impl Config {
             return Ok(TomlConfig::default());
         }
         let text =
-            std::fs::read_to_string(&path).with_context(|| format!("读取 {}", path.display()))?;
-        toml::from_str(&text).with_context(|| format!("解析 {}", path.display()))
+            std::fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+        toml::from_str(&text).with_context(|| format!("failed to parse {}", path.display()))
     }
 
     fn merge(t: TomlConfig, workspace: PathBuf) -> anyhow::Result<Config> {
-        // model：HOVERSTARE_MODEL 环境变量 > toml > 默认
+        // model: HOVERSTARE_MODEL env var > toml > default
         let model = std::env::var("HOVERSTARE_MODEL")
             .ok()
             .filter(|v| !v.is_empty())
@@ -190,31 +195,31 @@ impl Config {
         let max_tool_calls = t.max_tool_calls.unwrap_or(20);
         let timeout_secs = t.timeout_secs.unwrap_or(900);
 
-        // 校验（spec 01）
+        // Validation (spec 01)
         if model.trim().is_empty() {
-            bail!("model 不能为空");
+            bail!("model must not be empty");
         }
         if passes == 0 {
-            bail!("passes 必须 >= 1");
+            bail!("passes must be >= 1");
         }
         if max_diff_kb < 50 {
-            bail!("max_diff_kb 必须 >= 50（当前 {max_diff_kb}）");
+            bail!("max_diff_kb must be >= 50 (got {max_diff_kb})");
         }
         if max_tool_calls == 0 {
-            bail!("max_tool_calls 必须 >= 1");
+            bail!("max_tool_calls must be >= 1");
         }
 
-        // ignore：内置 + 用户配置
+        // ignore: built-in + user-configured
         let mut builder = GlobSetBuilder::new();
         for pat in BUILTIN_IGNORE {
             builder.add(Glob::new(pat)?);
         }
         for pat in t.ignore.unwrap_or_default() {
-            builder.add(Glob::new(&pat).with_context(|| format!("非法 ignore glob: {pat:?}"))?);
+            builder.add(Glob::new(&pat).with_context(|| format!("invalid ignore glob: {pat:?}"))?);
         }
         let ignore = builder.build()?;
 
-        // LLM 凭据：OPENAI_API_KEY 优先（OpenAI 兼容路径，含 Kimi Code 端点）
+        // LLM credentials: OPENAI_API_KEY takes precedence (OpenAI-compatible path, incl. Kimi Code endpoints)
         let llm = match (
             std::env::var("OPENAI_API_KEY"),
             std::env::var("ANTHROPIC_API_KEY"),
@@ -229,11 +234,11 @@ impl Config {
                 base_url: std::env::var("ANTHROPIC_BASE_URL").ok(),
             },
             _ => bail!(
-                "缺少 LLM 凭据：请设置 OPENAI_API_KEY（可配 OPENAI_BASE_URL）或 ANTHROPIC_API_KEY"
+                "missing LLM credentials: set OPENAI_API_KEY (optionally with OPENAI_BASE_URL) or ANTHROPIC_API_KEY"
             ),
         };
 
-        // GH_PAT 优先（GraphQL resolveReviewThread 需要 classic PAT 才可靠，spec 07）
+        // GH_PAT takes precedence (GraphQL resolveReviewThread is only reliable with a classic PAT, spec 07)
         let github_token = std::env::var("GH_PAT")
             .ok()
             .filter(|v| !v.is_empty())
@@ -255,6 +260,10 @@ impl Config {
             status_checks: t.status_checks.unwrap_or(false),
             instructions: t.instructions.unwrap_or_default(),
             set_temperature: t.set_temperature.unwrap_or(true),
+            language: crate::i18n::Lang::resolve(
+                std::env::var("HOVERSTARE_LANGUAGE").ok().as_deref(),
+                t.language.as_deref(),
+            ),
             github_token,
             llm,
             workspace,

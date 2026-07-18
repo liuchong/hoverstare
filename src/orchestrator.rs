@@ -1,4 +1,5 @@
-//! 编排：review 命令的端到端流程（spec 00 核心数据流，spec 07 增量模式）
+//! Orchestration: end-to-end flow of the review command (spec 00 core data
+//! flow, spec 07 incremental mode)
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -11,6 +12,7 @@ use crate::diff::{self, ParsedDiff};
 use crate::event;
 use crate::findings::AnalysisResult;
 use crate::github::{GitHubClient, NewStatus, Repo, StatusState};
+use crate::i18n::T;
 use crate::prompt::ReviewMode;
 use crate::report::{self, ReviewContext};
 use crate::state::{self, OpenFinding};
@@ -23,7 +25,8 @@ pub enum Outcome {
     AnalysisFailed(String),
 }
 
-/// fail-open 收口：分析区失败 → AnalysisFailed（exit 0）；fail_closed → Err（exit 1）
+/// fail-open funnel: analysis-zone failure -> AnalysisFailed (exit 0);
+/// fail_closed -> Err (exit 1)
 fn fail_or_open(cfg: &Config, e: anyhow::Error) -> anyhow::Result<Outcome> {
     if cfg.fail_closed {
         Err(e)
@@ -32,8 +35,9 @@ fn fail_or_open(cfg: &Config, e: anyhow::Error) -> anyhow::Result<Outcome> {
     }
 }
 
-/// 所有终态（含跳过/失败路径）都写 `hoverstare` status check（spec 07：
-/// 否则 required check 永不到达会死锁合并）
+/// Every terminal state (including skip/failure paths) writes the `hoverstare`
+/// status check (spec 07: otherwise a required check would never arrive and
+/// merging would deadlock)
 async fn post_terminal_status(
     gh: &GitHubClient,
     repo: &Repo,
@@ -62,13 +66,14 @@ async fn post_terminal_status(
         )
         .await
     {
-        tracing::warn!("写 status check hoverstare 失败: {e}");
+        tracing::warn!("failed to write status check hoverstare: {e}");
     }
 }
 
-/// 跳过路径的统一收口：先写终态 checks 再返回。
-/// 跳过 = 无可审内容 → findings 恒为空，findings check 一并 success（spec 07），
-/// 否则 required check 会永远 pending 死锁合并。
+/// Unified funnel for skip paths: write terminal checks before returning.
+/// Skip = nothing to review -> findings are always empty, so the findings check
+/// is also success (spec 07); otherwise a required check would stay pending
+/// forever and deadlock merging.
 async fn skip_outcome(
     cfg: &Config,
     gh: &GitHubClient,
@@ -76,7 +81,7 @@ async fn skip_outcome(
     head_sha: &str,
     reason: String,
 ) -> Outcome {
-    post_terminal_status(gh, repo, head_sha, cfg, true, &format!("跳过：{reason}")).await;
+    post_terminal_status(gh, repo, head_sha, cfg, true, &T::new(cfg.language).status_skipped(&reason)).await;
     if cfg.status_checks
         && let Err(e) = gh
             .create_status(
@@ -85,7 +90,8 @@ async fn skip_outcome(
                 &NewStatus {
                     context: "hoverstare-findings",
                     state: StatusState::Success,
-                    description: format!("无可审内容，无发现（{reason}）")
+                    description: T::new(cfg.language)
+                        .status_nothing_to_review(&reason)
                         .chars()
                         .take(140)
                         .collect(),
@@ -93,12 +99,12 @@ async fn skip_outcome(
             )
             .await
     {
-        tracing::warn!("写 status check hoverstare-findings 失败: {e}");
+        tracing::warn!("failed to write status check hoverstare-findings: {e}");
     }
     Outcome::Skipped(reason)
 }
 
-/// GitHub Actions 日志分组（本地运行时为 no-op）
+/// GitHub Actions log grouping (no-op when running locally)
 fn gha_group(name: &str) {
     if std::env::var("GITHUB_ACTIONS").is_ok() {
         println!("::group::{name}");
@@ -120,15 +126,15 @@ pub async fn run_review(
     let repo = Repo::parse(&pr_ref.repo).map_err(|e| anyhow::anyhow!("{e}"))?;
     let gh = GitHubClient::new(cfg.github_token.clone())?;
 
-    tracing::info!("目标 PR: {} #{}", repo.full_name(), pr_ref.number);
-    gha_group("准备（PR / diff / 增量判定）");
-    // GitHub I/O 失败（网络/限流/权限）属于 fail-open 区间（spec 01）
+    tracing::info!("target PR: {} #{}", repo.full_name(), pr_ref.number);
+    gha_group("preparation (PR / diff / incremental check)");
+    // GitHub I/O failures (network/rate limit/permissions) are in the fail-open zone (spec 01)
     let pr = match gh.get_pull_request(&repo, pr_ref.number).await {
         Ok(p) => p,
-        Err(e) => return fail_or_open(cfg, anyhow::anyhow!("获取 PR 失败: {e}")),
+        Err(e) => return fail_or_open(cfg, anyhow::anyhow!("failed to fetch PR: {e}")),
     };
 
-    // 跳过条件（spec 01）
+    // Skip conditions (spec 01)
     let head_sha = pr.head.sha.clone();
     if pr.draft && !cfg.review_drafts {
         return Ok(skip_outcome(cfg, &gh, &repo, &head_sha, "draft PR".into()).await);
@@ -139,42 +145,42 @@ pub async fn run_review(
             &gh,
             &repo,
             &head_sha,
-            format!("bot 作者: {}", pr.user.login),
+            format!("bot author: {}", pr.user.login),
         )
         .await);
     }
 
-    // 增量模式判定（spec 07）：找最近一次含 hoverstare-meta 的 review
+    // Incremental-mode check (spec 07): find the most recent review containing hoverstare-meta
     let prior_sha = match gh.list_reviews(&repo, pr_ref.number).await {
         Ok(reviews) => reviews
             .iter()
             .rev()
             .find_map(|r| state::parse_meta_head_sha(&r.body)),
         Err(e) => {
-            tracing::warn!("获取历史 reviews 失败（按全量处理）: {e}");
+            tracing::warn!("failed to fetch historical reviews (treating as full review): {e}");
             None
         }
     };
     let incremental = !force_full && prior_sha.as_deref().is_some_and(|s| s != pr.head.sha);
 
-    // 完整 diff（锚定 + 全量模式的分析范围）
+    // Full diff (for anchoring + the analysis scope of full mode)
     let full_diff = match gh.get_pull_request_diff(&repo, pr_ref.number).await {
         Ok(d) => d,
-        Err(e) => return fail_or_open(cfg, anyhow::anyhow!("获取 diff 失败: {e}")),
+        Err(e) => return fail_or_open(cfg, anyhow::anyhow!("failed to fetch diff: {e}")),
     };
     if full_diff.trim().is_empty() {
-        return Ok(skip_outcome(cfg, &gh, &repo, &head_sha, "空 diff".into()).await);
+        return Ok(skip_outcome(cfg, &gh, &repo, &head_sha, "empty diff".into()).await);
     }
     let (full_filtered, full_excluded) = diff::filter_text(&full_diff, &cfg.ignore);
     let full_trunc = diff::truncate_text(&full_filtered, cfg.max_diff_kb);
     let anchor_parsed = ParsedDiff::parse(&full_trunc.text);
 
-    // 分析范围（spec 07：增量 = prior..head 的 delta diff）
+    // Analysis scope (spec 07: incremental = delta diff of prior..head)
     let (analysis_text, truncated_files, excluded_files) = if incremental {
         let prior = prior_sha.as_deref().unwrap_or_default();
         let delta = match gh.get_compare_diff(&repo, prior, &pr.head.sha).await {
             Ok(d) => d,
-            Err(e) => return fail_or_open(cfg, anyhow::anyhow!("获取增量 diff 失败: {e}")),
+            Err(e) => return fail_or_open(cfg, anyhow::anyhow!("failed to fetch incremental diff: {e}")),
         };
         if delta.trim().is_empty() {
             return Ok(skip_outcome(
@@ -182,7 +188,7 @@ pub async fn run_review(
                 &gh,
                 &repo,
                 &head_sha,
-                "自上次审查以来无新增变更".into(),
+                "no new changes since the last review".into(),
             )
             .await);
         }
@@ -200,9 +206,9 @@ pub async fn run_review(
     let analysis_parsed = ParsedDiff::parse(&analysis_text);
     if analysis_parsed.files.is_empty() {
         let reason = if excluded_files > 0 {
-            format!("全部变更被规则过滤（{excluded_files} 个文件）")
+            format!("all changes filtered out by rules ({excluded_files} files)")
         } else {
-            "diff 中无可审查的变更".to_string()
+            "no reviewable changes in diff".to_string()
         };
         return Ok(skip_outcome(cfg, &gh, &repo, &head_sha, reason).await);
     }
@@ -210,28 +216,28 @@ pub async fn run_review(
         let outcome = fail_or_open(
             cfg,
             anyhow::anyhow!(
-                "diff 超出预算 2 倍（{} KB），放弃分析",
+                "diff exceeds 2x budget ({} KB), abandoning analysis",
                 analysis_text.len() / 1024
             ),
         )?;
         if matches!(outcome, Outcome::AnalysisFailed(_)) {
-            post_terminal_status(&gh, &repo, &head_sha, cfg, false, "diff 超预算放弃分析").await;
+            post_terminal_status(&gh, &repo, &head_sha, cfg, false, "diff over budget, analysis abandoned").await;
         }
         return Ok(outcome);
     }
     tracing::info!(
-        "diff: {} 个文件（{}模式，过滤 {} 个，截断 {} 个），{} KB",
+        "diff: {} files ({} mode, {} filtered, {} truncated), {} KB",
         analysis_parsed.files.len(),
-        if incremental { "增量" } else { "全量" },
+        if incremental { "incremental" } else { "full" },
         excluded_files,
         truncated_files.len(),
         analysis_text.len() / 1024
     );
 
-    // 历史未关闭 findings（spec 07）
+    // Historical unresolved findings (spec 07)
     let open_findings = fetch_open_findings(&gh, &repo, pr_ref.number).await;
     if !open_findings.is_empty() {
-        tracing::info!("历史未关闭发现 {} 条", open_findings.len());
+        tracing::info!("{} historical unresolved finding(s)", open_findings.len());
     }
     let open_fps: BTreeSet<String> = open_findings
         .iter()
@@ -244,9 +250,11 @@ pub async fn run_review(
         open_findings: &open_findings,
     };
 
-    // 分析（fail-open 区间，spec 01 退出码契约）；工具沙箱根 = checkout 工作区
+    // Analysis (fail-open zone, spec 01 exit-code contract); tool sandbox root =
+    // the checked-out workspace
+    let t = T::new(cfg.language);
     gha_group_end();
-    gha_group("分析（多路审查 / 投票 / 复核）");
+    gha_group("analysis (multi-pass review / voting / verification)");
     let shared = ToolShared::new(cfg.workspace.clone(), &pr.base.ref_name, cfg.max_tool_calls);
     let analysis = match analyze(
         cfg,
@@ -261,29 +269,28 @@ pub async fn run_review(
         Ok(a) => a,
         Err(e) => {
             gha_group_end();
-            let outcome = fail_or_open(cfg, e.context("分析失败"))?;
+            let outcome = fail_or_open(cfg, e.context("analysis failed"))?;
             if matches!(outcome, Outcome::AnalysisFailed(_)) {
-                post_terminal_status(&gh, &repo, &head_sha, cfg, false, "分析失败（fail-open）")
+                post_terminal_status(&gh, &repo, &head_sha, cfg, false, "analysis failed (fail-open)")
                     .await;
             }
             return Ok(outcome);
         }
     };
     tracing::info!(
-        "模型报告 {} 条 finding，判定已修复 {} 条",
-        analysis.findings.len(),
-        analysis.resolved_finding_ids.len()
+        "{}",
+        t.log_findings(analysis.findings.len(), analysis.resolved_finding_ids.len())
     );
     let trace = shared.trace();
     if !trace.is_empty() {
         let names: Vec<&str> = trace.iter().map(|t| t.name.as_str()).collect();
-        tracing::info!("工具调用 {} 次: {}", trace.len(), names.join(", "));
+        tracing::info!("{}", t.log_tool_calls(trace.len(), &names.join(", ")));
     }
 
-    // 渲染（锚定始终用完整 diff，spec 07）
+    // Rendering (anchoring always uses the full diff, spec 07)
     let scope_label = match (incremental, prior_short) {
-        (true, Some(p)) => format!("增量审查（自 {p} 以来）"),
-        _ => "全量审查".to_string(),
+        (true, Some(p)) => t.scope_incremental(p),
+        _ => t.scope_full().to_string(),
     };
     let ctx = ReviewContext {
         repo_full_name: &repo.full_name(),
@@ -312,22 +319,24 @@ pub async fn run_review(
         return Ok(Outcome::DryRun);
     }
 
-    // 发布（spec 06 ⑤：失败降级为摘要评论，双失败 exit 1）
+    // Publishing (spec 06 (5): on failure fall back to a summary comment;
+    // double failure -> exit 1)
     gha_group_end();
-    gha_group("发布与收尾（review / resolve / status checks）");
+    gha_group("publish and wrap up (review / resolve / status checks)");
     let published = match gh.create_review(&repo, pr_ref.number, &built.review).await {
         Ok(_) => true,
         Err(e) => {
-            tracing::warn!("review 发布失败（{e}），降级为摘要评论");
-            let fallback = report::render_fallback_comment(&built.review.body, &analysis.findings);
+            tracing::warn!("review publishing failed ({e}), falling back to a summary comment");
+            let fallback = report::render_fallback_comment(&built.review.body, &analysis.findings, &t);
             gh.create_issue_comment(&repo, pr_ref.number, &fallback)
                 .await
-                .map_err(|e2| anyhow::anyhow!("review 与降级评论均失败: {e} ; {e2}"))?;
+                .map_err(|e2| anyhow::anyhow!("both review and fallback comment failed: {e} ; {e2}"))?;
             false
         }
     };
 
-    // resolve 已修复线程（spec 07；GITHUB_TOKEN 限制时降级为线程内标记）
+    // Resolve fixed threads (spec 07; falls back to in-thread marking when
+    // GITHUB_TOKEN is restricted)
     let resolved_fps: BTreeSet<String> = analysis.resolved_finding_ids.iter().cloned().collect();
     let to_resolve = state::resolvable_threads(&open_findings, &resolved_fps);
     let mut resolved_count = 0;
@@ -344,10 +353,10 @@ pub async fn run_review(
         }
     }
     if resolved_count > 0 || replied_count > 0 {
-        tracing::info!("已修复线程处理：resolve {resolved_count} 个，降级标记 {replied_count} 个");
+        tracing::info!("{}", t.log_resolved_threads(resolved_count, replied_count));
     }
 
-    // status checks（spec 07）
+    // status checks (spec 07)
     if cfg.status_checks {
         post_status_checks(
             &gh,
@@ -356,6 +365,7 @@ pub async fn run_review(
             &analysis,
             &open_findings,
             &to_resolve,
+            &t,
         )
         .await;
     }
@@ -372,8 +382,8 @@ enum ResolveOutcome {
     Failed,
 }
 
-/// resolve 线程；GITHUB_TOKEN 平台限制（Resource not accessible by integration）
-/// 时降级为线程内回复"已修复"标记（spec 07）
+/// Resolve a thread; when the platform restricts GITHUB_TOKEN (Resource not
+/// accessible by integration), fall back to an in-thread "fixed" reply (spec 07)
 async fn resolve_or_reply(
     gh: &GitHubClient,
     repo: &Repo,
@@ -385,17 +395,17 @@ async fn resolve_or_reply(
         Ok(()) => ResolveOutcome::Resolved,
         Err(e) => {
             let Some(cid) = comment_id else {
-                tracing::warn!("resolve 线程 {thread_id} 失败且无评论 id 可降级: {e}");
+                tracing::warn!("failed to resolve thread {thread_id} and no comment id available for fallback: {e}");
                 return ResolveOutcome::Failed;
             };
-            tracing::warn!("resolve 不可用（{e}），降级为线程内标记修复: {thread_id}");
+            tracing::warn!("resolve unavailable ({e}), falling back to in-thread fixed marker: {thread_id}");
             match gh
-                .reply_to_review_comment(repo, pr_number, cid, "✅ HoverStare 已确认修复")
+                .reply_to_review_comment(repo, pr_number, cid, "✅ HoverStare confirmed fixed")
                 .await
             {
                 Ok(()) => ResolveOutcome::Replied,
                 Err(e2) => {
-                    tracing::warn!("降级标记也失败: {e2}");
+                    tracing::warn!("fallback marking also failed: {e2}");
                     ResolveOutcome::Failed
                 }
             }
@@ -403,7 +413,7 @@ async fn resolve_or_reply(
     }
 }
 
-/// 拉取历史未关闭的 hoverstare findings（GraphQL threads + 标记解析）
+/// Fetch historical unresolved hoverstare findings (GraphQL threads + marker parsing)
 async fn fetch_open_findings(gh: &GitHubClient, repo: &Repo, number: u64) -> Vec<OpenFinding> {
     match gh.list_review_threads(repo, number).await {
         Ok(threads) => threads
@@ -412,7 +422,7 @@ async fn fetch_open_findings(gh: &GitHubClient, repo: &Repo, number: u64) -> Vec
             .filter_map(|t| {
                 let fingerprints = state::extract_fingerprints(&t.first_comment_body);
                 if fingerprints.is_empty() {
-                    return None; // 非 hoverstare 线程
+                    return None; // not a hoverstare thread
                 }
                 let has_high_severity =
                     t.first_comment_body.contains('🔴') || t.first_comment_body.contains('🟠');
@@ -426,13 +436,13 @@ async fn fetch_open_findings(gh: &GitHubClient, repo: &Repo, number: u64) -> Vec
             })
             .collect(),
         Err(e) => {
-            tracing::warn!("获取历史线程失败（按无历史处理）: {e}");
+            tracing::warn!("failed to fetch historical threads (treating as no history): {e}");
             Vec::new()
         }
     }
 }
 
-/// 写两个 status check（spec 07）：单个失败只记日志
+/// Write the two status checks (spec 07); individual failures are only logged
 async fn post_status_checks(
     gh: &GitHubClient,
     repo: &Repo,
@@ -440,6 +450,7 @@ async fn post_status_checks(
     analysis: &AnalysisResult,
     open_findings: &[OpenFinding],
     resolved_threads: &[String],
+    t: &T,
 ) {
     if let Err(e) = gh
         .create_status(
@@ -448,12 +459,12 @@ async fn post_status_checks(
             &NewStatus {
                 context: "hoverstare",
                 state: StatusState::Success,
-                description: "审查完成".to_string(),
+                description: t.status_review_done().to_string(),
             },
         )
         .await
     {
-        tracing::warn!("写 status check hoverstare 失败: {e}");
+        tracing::warn!("failed to write status check hoverstare: {e}");
     }
 
     let new_high = analysis
@@ -468,7 +479,7 @@ async fn post_status_checks(
         (
             StatusState::Failure,
             format!(
-                "存在未解决的高危发现（新 {} 条，历史未关闭 {} 条）",
+                "Unresolved high-severity findings (new: {}, open: {})",
                 analysis
                     .findings
                     .iter()
@@ -481,7 +492,7 @@ async fn post_status_checks(
             ),
         )
     } else {
-        (StatusState::Success, "无高危发现".to_string())
+        (StatusState::Success, "No high-severity findings".to_string())
     };
     if let Err(e) = gh
         .create_status(
@@ -495,11 +506,12 @@ async fn post_status_checks(
         )
         .await
     {
-        tracing::warn!("写 status check hoverstare-findings 失败: {e}");
+        tracing::warn!("failed to write status check hoverstare-findings: {e}");
     }
 }
 
-/// 分析入口（公开以便 examples/集成测试复用）：多 pass 管线（spec 05）
+/// Analysis entry point (public so examples/integration tests can reuse it):
+/// multi-pass pipeline (spec 05)
 pub async fn analyze(
     cfg: &Config,
     parsed: &ParsedDiff,
@@ -522,7 +534,7 @@ pub async fn analyze(
     let st = &outcome.stats;
     if st.passes_run > 1 || st.clusters > 0 {
         tracing::info!(
-            "管线统计: {} 路 pass，{} 簇，{} 票选入选，{} 复核入选，{} 丢弃（各路 finding: {:?}）",
+            "pipeline stats: {} pass(es), {} cluster(s), {} voted in, {} verified in, {} dropped (findings per pass: {:?})",
             st.passes_run,
             st.clusters,
             st.voted_in,

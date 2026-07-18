@@ -1,8 +1,8 @@
-//! GitHub REST 客户端（spec 02）
+//! GitHub REST client (spec 02)
 //!
-//! M1 范围：PR 信息、diff 获取、review 发布、降级评论。
-//! GraphQL（threads/resolve）与 status checks 在 M4 加入。
-//! files API 回退（>300 文件）在 M2 加入。
+//! M1 scope: PR info, diff fetching, review publishing, fallback comments.
+//! GraphQL (threads/resolve) and status checks are added in M4.
+//! The files API fallback (>300 files) is added in M2.
 
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -32,7 +32,7 @@ impl Repo {
     pub fn parse(full: &str) -> Result<Repo, GitHubError> {
         let (owner, name) = full.split_once('/').ok_or(GitHubError::Api {
             status: 0,
-            body: format!("仓库格式应为 owner/repo，实际: {full:?}"),
+            body: format!("repo must be in owner/repo form, got: {full:?}"),
         })?;
         Ok(Repo {
             owner: owner.to_string(),
@@ -50,7 +50,7 @@ pub struct PullRequest {
     #[allow(dead_code)]
     pub number: u64,
     pub head: PrRef,
-    /// base 分支（show_base_file 的参照）
+    /// base branch (reference for show_base_file)
     pub base: PrRef,
     #[serde(default)]
     pub draft: bool,
@@ -74,7 +74,7 @@ pub struct PrFile {
     pub filename: String,
     #[allow(dead_code)]
     pub status: String,
-    /// 二进制或单文件过大时为 None
+    /// None for binary files or files too large
     pub patch: Option<String>,
 }
 
@@ -92,7 +92,7 @@ pub struct ReviewSummary {
 pub struct ReviewThread {
     pub id: String,
     pub is_resolved: bool,
-    /// 首条评论的 databaseId（REST 回复端点用；FORBIDDEN 降级路径）
+    /// databaseId of the first comment (for the REST reply endpoint; FORBIDDEN fallback path)
     pub first_comment_id: Option<u64>,
     pub first_comment_body: String,
 }
@@ -146,7 +146,7 @@ impl GitHubClient {
         Self::with_api_url(token, &api)
     }
 
-    /// 显式指定 API base URL（测试与 GHE 用）
+    /// Explicitly set the API base URL (for tests and GHE)
     pub fn with_api_url(
         token: Option<SecretString>,
         api: &str,
@@ -163,7 +163,7 @@ impl GitHubClient {
         })
     }
 
-    /// 覆盖重试退避基数（测试用）
+    /// Override the retry backoff base (for tests)
     pub fn with_retry_backoff(mut self, base: std::time::Duration) -> GitHubClient {
         self.retry_backoff_base = base;
         self
@@ -183,13 +183,14 @@ impl GitHubClient {
         if let Some(token) = &self.token {
             req = req.bearer_auth(token.expose_secret());
         }
-        // 注意：reqwest 的 .header() 是追加而非覆盖，Accept 只能设置一次
+        // Note: reqwest's .header() appends rather than overwrites, so Accept
+        // can only be set once
         req.header("Accept", accept)
             .header("X-GitHub-Api-Version", "2022-11-28")
     }
 
-    /// 429/5xx 指数退避重试（0.5s/2s/8s），其余状态直接返回；
-    /// 429 重试耗尽 → RateLimited（spec 02）
+    /// Exponential backoff retries (0.5s/2s/8s) for 429/5xx; other statuses are
+    /// returned directly; exhausted 429 retries -> RateLimited (spec 02)
     async fn send(
         &self,
         build: impl Fn() -> reqwest::RequestBuilder,
@@ -210,7 +211,7 @@ impl GitHubClient {
             }
             let backoff = self.retry_backoff_base * 4u32.pow(attempt);
             tracing::warn!(
-                "GitHub API {status}，{backoff:?} 后重试 ({}/{MAX_RETRIES})",
+                "GitHub API {status}, retrying in {backoff:?} ({}/{MAX_RETRIES})",
                 attempt + 1
             );
             tokio::time::sleep(backoff).await;
@@ -244,7 +245,7 @@ impl GitHubClient {
         Ok(resp.json().await?)
     }
 
-    /// 获取 PR 的 unified diff 文本
+    /// Fetch the PR's unified diff text
     pub async fn get_pull_request_diff(
         &self,
         repo: &Repo,
@@ -265,16 +266,17 @@ impl GitHubClient {
             .await?;
         match Self::error_for_status(resp).await {
             Ok(resp) => Ok(resp.text().await?),
-            // >300 文件的 PR 会被 diff 端点拒绝（406）→ 回退 files API 重组（spec 02）
+            // PRs with >300 files are rejected by the diff endpoint (406) ->
+            // fall back to reassembling via the files API (spec 02)
             Err(GitHubError::Api { status: 406, .. }) => {
-                tracing::warn!("diff 端点返回 406（文件数超限），回退 files API 分页重组");
+                tracing::warn!("diff endpoint returned 406 (too many files), falling back to files API pagination");
                 self.fetch_diff_via_files_api(repo, number).await
             }
             Err(e) => Err(e),
         }
     }
 
-    /// files API 分页重组 unified diff（spec 02 回退路径）
+    /// Reassemble a unified diff via files API pagination (spec 02 fallback path)
     async fn fetch_diff_via_files_api(
         &self,
         repo: &Repo,
@@ -284,7 +286,7 @@ impl GitHubClient {
         let mut out = String::new();
         for f in &files {
             let Some(patch) = &f.patch else {
-                tracing::warn!("文件 {} 无 patch（二进制或过大），跳过", f.filename);
+                tracing::warn!("file {} has no patch (binary or too large), skipped", f.filename);
                 continue;
             };
             out.push_str(&format!("diff --git a/{0} b/{0}\n", f.filename));
@@ -297,7 +299,7 @@ impl GitHubClient {
         Ok(out)
     }
 
-    /// 分页拉取 PR 全部文件（per_page=100）
+    /// Fetch all PR files with pagination (per_page=100)
     pub async fn list_pull_request_files(
         &self,
         repo: &Repo,
@@ -325,7 +327,7 @@ impl GitHubClient {
         Ok(all)
     }
 
-    /// 发布 PR review（body + 可选行内评论，一次请求）
+    /// Publish a PR review (body + optional inline comments, one request)
     pub async fn create_review(
         &self,
         repo: &Repo,
@@ -362,7 +364,7 @@ impl GitHubClient {
         Ok(body["id"].as_u64().unwrap_or(0))
     }
 
-    /// 降级：发布普通 PR 评论
+    /// Fallback: publish a plain PR comment
     pub async fn create_issue_comment(
         &self,
         repo: &Repo,
@@ -382,7 +384,7 @@ impl GitHubClient {
         Ok(body["id"].as_u64().unwrap_or(0))
     }
 
-    /// 列出 PR 的 reviews（找历史 hoverstare review，增量模式判定用）
+    /// List the PR's reviews (used to find historical hoverstare reviews in incremental mode)
     pub async fn list_reviews(
         &self,
         repo: &Repo,
@@ -399,7 +401,7 @@ impl GitHubClient {
         Ok(resp.json().await?)
     }
 
-    /// compare API：两个 commit 之间的 diff（增量审查的 delta diff）
+    /// compare API: diff between two commits (delta diff for incremental review)
     pub async fn get_compare_diff(
         &self,
         repo: &Repo,
@@ -423,7 +425,7 @@ impl GitHubClient {
         Ok(resp.text().await?)
     }
 
-    /// 写 commit status（branch protection 可接，spec 07）
+    /// Write a commit status (branch protection can consume it, spec 07)
     pub async fn create_status(
         &self,
         repo: &Repo,
@@ -446,14 +448,14 @@ impl GitHubClient {
         Ok(())
     }
 
-    /// 给评论加 reaction（spec 09）：🚀 接单 / ✅ 完成 / ❌ 失败 / 👀 已读
+    /// Add a reaction to a comment (spec 09): 🚀 accepted / ✅ done / ❌ failed / 👀 read
     pub async fn create_reaction(
         &self,
         repo: &Repo,
         ev: &crate::event::MentionEvent,
         content: &str,
     ) -> Result<(), GitHubError> {
-        // issue 评论与 review 线程评论的端点不同
+        // issue comments and review thread comments use different endpoints
         let base = if ev.in_reply_to_id().is_some() {
             format!(
                 "{}/repos/{}/{}/pulls/comments/{}/reactions",
@@ -473,7 +475,7 @@ impl GitHubClient {
         Ok(())
     }
 
-    /// 取 review 线程评论的正文（explain 命令的上下文）
+    /// Fetch the body of a review thread comment (context for the explain command)
     pub async fn get_review_comment_body(
         &self,
         repo: &Repo,
@@ -507,7 +509,7 @@ impl GitHubClient {
             .await?;
         let resp = Self::error_for_status(resp).await?;
         let body: serde_json::Value = resp.json().await?;
-        // GraphQL 的错误是 HTTP 200 + errors 字段（spec 02）
+        // GraphQL errors come back as HTTP 200 + an errors field (spec 02)
         if let Some(errors) = body.get("errors")
             && errors.as_array().is_some_and(|e| !e.is_empty())
         {
@@ -516,7 +518,7 @@ impl GitHubClient {
         Ok(body)
     }
 
-    /// 分页拉取 PR 的全部 review threads（每线程取首条评论）
+    /// Fetch all review threads of a PR with pagination (first comment of each thread)
     pub async fn list_review_threads(
         &self,
         repo: &Repo,
@@ -572,7 +574,7 @@ impl GitHubClient {
         Ok(out)
     }
 
-    /// 在 review 线程里回复（resolve 的 FORBIDDEN 降级路径，spec 07）
+    /// Reply inside a review thread (FORBIDDEN fallback path for resolve, spec 07)
     pub async fn reply_to_review_comment(
         &self,
         repo: &Repo,
@@ -592,7 +594,7 @@ impl GitHubClient {
         Ok(())
     }
 
-    /// resolve 一个 review thread（单个失败由调用方记录，不重试）
+    /// Resolve a review thread (individual failures are recorded by the caller, not retried)
     pub async fn resolve_review_thread(&self, thread_id: &str) -> Result<(), GitHubError> {
         const MUTATION: &str = r#"mutation($threadId: ID!) {
   resolveReviewThread(input: { threadId: $threadId }) {

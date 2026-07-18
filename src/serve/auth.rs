@@ -1,4 +1,4 @@
-//! App 认证：JWT 签发 + 安装令牌交换与缓存（spec 10）
+//! App authentication: JWT signing + installation token exchange and caching (spec 10)
 
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -9,18 +9,18 @@ use secrecy::SecretString;
 use serde::Serialize;
 
 const TOKEN_TTL: Duration = Duration::from_secs(3600);
-/// 提前 10 分钟刷新
+/// Refresh 10 minutes early
 const REFRESH_MARGIN: Duration = Duration::from_secs(600);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServeAuthError {
-    #[error("private key 读取/解析失败: {0}")]
+    #[error("failed to read/parse private key: {0}")]
     Key(String),
-    #[error("JWT 签发失败: {0}")]
+    #[error("failed to sign JWT: {0}")]
     Jwt(#[from] jsonwebtoken::errors::Error),
-    #[error("安装令牌请求失败: {0}")]
+    #[error("installation token request failed: {0}")]
     Http(#[from] reqwest::Error),
-    #[error("安装令牌响应异常 {status}: {body}")]
+    #[error("unexpected installation token response {status}: {body}")]
     Api { status: u16, body: String },
 }
 
@@ -70,7 +70,7 @@ impl AppAuth {
             .as_secs()
     }
 
-    /// App JWT（RS256，iss=app_id，iat-60s，exp+9min，spec 10）
+    /// App JWT (RS256, iss=app_id, iat-60s, exp+9min, spec 10)
     pub fn jwt(&self) -> Result<String, ServeAuthError> {
         let now = Self::now();
         let claims = Claims {
@@ -85,7 +85,8 @@ impl AppAuth {
         )?)
     }
 
-    /// 取某 installation 的访问令牌（进程内缓存，提前 10 分钟刷新）
+    /// Get the access token for an installation (in-process cache, refreshed 10
+    /// minutes early)
     pub async fn installation_token(
         &self,
         installation_id: u64,
@@ -121,7 +122,7 @@ impl AppAuth {
         if token.is_empty() {
             return Err(ServeAuthError::Api {
                 status,
-                body: "响应缺少 token 字段".into(),
+                body: "response is missing the token field".into(),
             });
         }
         let secret = SecretString::from(token);

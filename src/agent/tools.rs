@@ -1,7 +1,9 @@
-//! 只读工具集（spec 04 §4.1）
+//! Read-only toolset (spec 04 §4.1)
 //!
-//! 审查模型的"眼睛"。全部机器层只读——工具注册表里根本不存在写工具。
-//! 框架无关实现：rig 的 Tool 包装层在 rig_backend.rs，只透传调用到这里。
+//! The "eyes" of the review model. Everything is read-only at the machine level —
+//! no write tools exist in the tool registry at all.
+//! Framework-agnostic implementation: rig's Tool wrapper layer is in rig_backend.rs
+//! and only forwards calls here.
 
 use std::fmt;
 use std::future::Future;
@@ -16,9 +18,9 @@ const MAX_READ_LINES: usize = 400;
 const MAX_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_GREP_MATCHES: usize = 50;
 const MAX_GLOB_RESULTS: usize = 100;
-/// grep 跳过的超大文件
+/// Oversized files skipped by grep
 const MAX_GREP_FILE_BYTES: u64 = 1024 * 1024;
-/// 遍历时跳过的目录（在 .gitignore 之外强制）
+/// Directories always skipped during traversal (enforced beyond .gitignore)
 const SKIP_DIRS: &[&str] = &[
     ".git",
     "target",
@@ -30,7 +32,7 @@ const SKIP_DIRS: &[&str] = &[
     ".idea",
 ];
 
-/// 工具共享状态：沙箱根、base 引用、预算计数、调用轨迹
+/// Shared tool state: sandbox root, base ref, budget counter, call trace
 pub struct ToolShared {
     workspace: PathBuf, // canonicalized
     base_ref: String,
@@ -74,7 +76,7 @@ impl ToolShared {
         self.trace.lock().unwrap().clone()
     }
 
-    /// 工具调用统一入口：预算闸 + 轨迹记录
+    /// Unified entry point for tool calls: budget gate + trace recording
     pub async fn run(
         &self,
         name: &'static str,
@@ -83,7 +85,7 @@ impl ToolShared {
     ) -> String {
         let n = self.calls.fetch_add(1, Ordering::SeqCst);
         if n >= self.max_calls {
-            return "budget exhausted: 工具调用预算已耗尽，请基于已有信息给出结论".to_string();
+            return "budget exhausted: tool call budget is exhausted; please conclude with the information you already have".to_string();
         }
         let t = Instant::now();
         let out = fut.await;
@@ -96,16 +98,17 @@ impl ToolShared {
         out
     }
 
-    /// 路径沙箱（spec 04 安全规则）：
-    /// 拒绝绝对路径、`..` 逃逸、符号链接逃逸；返回 workspace 内的绝对路径
+    /// Path sandbox (spec 04 safety rules):
+    /// rejects absolute paths, `..` escapes, and symlink escapes; returns an
+    /// absolute path inside the workspace
     fn resolve_path(&self, rel: &str) -> Result<PathBuf, String> {
         if rel.is_empty() {
-            return Err("空路径".to_string());
+            return Err("empty path".to_string());
         }
         if Path::new(rel).is_absolute() {
-            return Err(format!("拒绝绝对路径: {rel}"));
+            return Err(format!("absolute paths are not allowed: {rel}"));
         }
-        // 词法规范化（不触文件系统）
+        // Lexical normalization (does not touch the filesystem)
         let mut normalized = PathBuf::new();
         for comp in Path::new(rel).components() {
             match comp {
@@ -113,22 +116,22 @@ impl ToolShared {
                 Component::Normal(c) => normalized.push(c),
                 Component::ParentDir => {
                     if !normalized.pop() {
-                        return Err(format!("路径逃逸（..）: {rel}"));
+                        return Err(format!("path escape via ..: {rel}"));
                     }
                 }
-                _ => return Err(format!("非法路径: {rel}")),
+                _ => return Err(format!("invalid path: {rel}")),
             }
         }
         if normalized.as_os_str().is_empty() {
-            return Err("空路径".to_string());
+            return Err("empty path".to_string());
         }
         let candidate = self.workspace.join(&normalized);
         if candidate.exists() {
             let canon = candidate
                 .canonicalize()
-                .map_err(|e| format!("无法访问 {rel}: {e}"))?;
+                .map_err(|e| format!("cannot access {rel}: {e}"))?;
             if !canon.starts_with(&self.workspace) {
-                return Err(format!("符号链接逃逸: {rel}"));
+                return Err(format!("symlink escape: {rel}"));
             }
             Ok(canon)
         } else {
@@ -136,7 +139,7 @@ impl ToolShared {
         }
     }
 
-    /// 遍历工作区文件（gitignore-aware + 强制跳过目录），产出相对路径
+    /// Walk workspace files (gitignore-aware + forced skip dirs), yielding relative paths
     fn walk_files(&self) -> Vec<PathBuf> {
         let mut out = Vec::new();
         let walker = ignore::WalkBuilder::new(&self.workspace)
@@ -158,16 +161,16 @@ impl ToolShared {
     }
 }
 
-/// 截断输出到 MAX_OUTPUT_BYTES
+/// Truncate output to MAX_OUTPUT_BYTES
 fn cap_output(mut s: String) -> String {
     if s.len() > MAX_OUTPUT_BYTES {
         s.truncate(MAX_OUTPUT_BYTES);
-        s.push_str("\n... [输出过长已截断]\n");
+        s.push_str("\n... [output truncated]\n");
     }
     s
 }
 
-/// read_file：读工作区文件（带行号），单次 ≤400 行、≤64KB
+/// read_file: read a workspace file (with line numbers), ≤400 lines and ≤64KB per call
 pub async fn read_file(
     shared: &ToolShared,
     path: &str,
@@ -180,17 +183,17 @@ pub async fn read_file(
     };
     let meta = match std::fs::metadata(&p) {
         Ok(m) => m,
-        Err(e) => return format!("文件不存在或不可读: {path}（{e}）"),
+        Err(e) => return format!("file does not exist or is not readable: {path} ({e})"),
     };
     if meta.is_dir() {
-        return format!("{path} 是目录，不是文件");
+        return format!("{path} is a directory, not a file");
     }
     if meta.len() > MAX_GREP_FILE_BYTES * 4 {
-        return format!("文件过大（{} 字节），拒绝读取", meta.len());
+        return format!("file too large ({} bytes), refusing to read", meta.len());
     }
     let bytes = match std::fs::read(&p) {
         Ok(b) => b,
-        Err(e) => return format!("读取失败: {e}"),
+        Err(e) => return format!("failed to read: {e}"),
     };
     let text = String::from_utf8_lossy(&bytes);
     let lines: Vec<&str> = text.lines().collect();
@@ -199,24 +202,24 @@ pub async fn read_file(
     let s = start.unwrap_or(1).max(1) as usize;
     let e = end.map(|v| v as usize).unwrap_or(total).min(total);
     if s > e {
-        return format!("行范围无效: {s}-{e}（文件共 {total} 行）");
+        return format!("invalid line range: {s}-{e} (file has {total} lines)");
     }
 
     let mut out = String::new();
     for (idx, line) in lines[s - 1..e].iter().enumerate() {
         if idx >= MAX_READ_LINES || out.len() >= MAX_OUTPUT_BYTES {
-            out.push_str(&format!("... [截断：文件共 {total} 行，已显示 {idx} 行]\n"));
+            out.push_str(&format!("... [truncated: file has {total} lines, showing {idx}]\n"));
             break;
         }
         out.push_str(&format!("{:>5}│{line}\n", s + idx));
     }
     if out.is_empty() {
-        return "（空文件或范围内无内容）".to_string();
+        return "(empty file or nothing in range)".to_string();
     }
     out
 }
 
-/// grep：正则搜索（默认全仓库），≤50 个匹配，支持上下文行
+/// grep: regex search (whole repo by default), ≤50 matches, supports context lines
 pub async fn grep(
     shared: &ToolShared,
     pattern: &str,
@@ -225,11 +228,11 @@ pub async fn grep(
 ) -> String {
     let re = match regex::Regex::new(pattern) {
         Ok(r) => r,
-        Err(e) => return format!("正则非法: {e}"),
+        Err(e) => return format!("invalid regex: {e}"),
     };
     let ctx = context_lines.unwrap_or(0) as usize;
 
-    // 确定搜索范围：单文件/目录/全仓库
+    // Determine the search scope: single file / directory / whole repo
     let files: Vec<PathBuf> = match path {
         Some(p) => match shared.resolve_path(p) {
             Ok(abs) if abs.is_file() => vec![
@@ -238,7 +241,7 @@ pub async fn grep(
                     .to_path_buf(),
             ],
             Ok(_) => {
-                // 目录：遍历后按前缀过滤
+                // Directory: walk and filter by prefix
                 let prefix = p.trim_end_matches('/');
                 shared
                     .walk_files()
@@ -264,7 +267,7 @@ pub async fn grep(
         let Ok(bytes) = std::fs::read(&abs) else {
             continue;
         };
-        // 二进制探测：前 8KB 含 NUL 即跳过
+        // Binary probe: skip if the first 8KB contain a NUL
         if bytes[..bytes.len().min(8192)].contains(&0) {
             continue;
         }
@@ -287,22 +290,22 @@ pub async fn grep(
             }
             matches += 1;
             if matches >= MAX_GREP_MATCHES || out.len() >= MAX_OUTPUT_BYTES {
-                out.push_str(&format!("... [已截断：仅显示前 {matches} 个匹配]\n"));
+                out.push_str(&format!("... [truncated: showing first {matches} matches]\n"));
                 break 'files;
             }
         }
     }
     if matches == 0 {
-        return format!("无匹配: {pattern}");
+        return format!("no matches: {pattern}");
     }
     cap_output(out)
 }
 
-/// glob：按 glob 模式找文件，≤100 条
+/// glob: find files by glob pattern, ≤100 results
 pub async fn glob(shared: &ToolShared, pattern: &str) -> String {
     let matcher = match globset::Glob::new(pattern) {
         Ok(g) => g.compile_matcher(),
-        Err(e) => return format!("glob 模式非法: {e}"),
+        Err(e) => return format!("invalid glob pattern: {e}"),
     };
     let mut hits: Vec<String> = shared
         .walk_files()
@@ -314,19 +317,20 @@ pub async fn glob(shared: &ToolShared, pattern: &str) -> String {
     let total = hits.len();
     hits.truncate(MAX_GLOB_RESULTS);
     if hits.is_empty() {
-        return format!("无匹配: {pattern}");
+        return format!("no matches: {pattern}");
     }
     let mut out = hits.join("\n");
     if total > MAX_GLOB_RESULTS {
-        out.push_str(&format!("\n... [已截断：共 {total} 个匹配]"));
+        out.push_str(&format!("\n... [truncated: {total} matches total]"));
     }
     out.push('\n');
     out
 }
 
-/// show_base_file：读 base 分支版本（唯一允许的进程调用，参数固定格式）
+/// show_base_file: read the base-branch version (the only allowed process call, fixed argument format)
 pub async fn show_base_file(shared: &ToolShared, path: &str) -> String {
-    // 沙箱校验（防止路径逃逸；文件不要求存在于工作区——可能只在 base 中存在）
+    // Sandbox check (prevents path escape; the file is not required to exist in
+    // the workspace — it may only exist on base)
     let abs = match shared.resolve_path(path) {
         Ok(p) => p,
         Err(e) => return e,
@@ -337,7 +341,7 @@ pub async fn show_base_file(shared: &ToolShared, path: &str) -> String {
         .to_string_lossy()
         .replace('\\', "/");
 
-    // 依次尝试 origin/<base>、<base>、HEAD
+    // Try origin/<base>, <base>, HEAD in order
     let candidates = [
         format!("origin/{}", shared.base_ref),
         shared.base_ref.clone(),
@@ -355,7 +359,7 @@ pub async fn show_base_file(shared: &ToolShared, path: &str) -> String {
             Ok(o) if o.status.success() => {
                 let text = String::from_utf8_lossy(&o.stdout).to_string();
                 if text.is_empty() {
-                    return format!("{spec} 内容为空");
+                    return format!("{spec} is empty");
                 }
                 return cap_output(text);
             }
@@ -367,7 +371,7 @@ pub async fn show_base_file(shared: &ToolShared, path: &str) -> String {
             }
         }
     }
-    format!("无法读取 base 版本 {rel}（{last_err}）")
+    format!("cannot read base version of {rel} ({last_err})")
 }
 
 #[cfg(test)]
@@ -406,17 +410,17 @@ mod tests {
         assert!(
             read_file(&s, "../outside.rs", None, None)
                 .await
-                .contains("逃逸")
+                .contains("escape")
         );
         assert!(
             read_file(&s, "/etc/passwd", None, None)
                 .await
-                .contains("绝对路径")
+                .contains("absolute paths")
         );
         assert!(
             read_file(&s, "src/../../x.rs", None, None)
                 .await
-                .contains("逃逸")
+                .contains("escape")
         );
     }
 
@@ -426,7 +430,7 @@ mod tests {
         let outside = tempfile::NamedTempFile::new().unwrap();
         std::os::unix::fs::symlink(outside.path(), s.workspace().join("src/link.rs")).unwrap();
         let out = read_file(&s, "src/link.rs", None, None).await;
-        assert!(out.contains("符号链接逃逸"), "实际: {out}");
+        assert!(out.contains("symlink escape"), "actual: {out}");
     }
 
     #[tokio::test]
@@ -435,7 +439,7 @@ mod tests {
         let out = grep(&s, "helper", None, None).await;
         assert!(out.contains("src/main.rs:2:"));
         assert!(out.contains("src/util/mod.rs:1:"));
-        // 带上下文
+        // with context
         let ctx = grep(&s, "helper", Some("src/main.rs"), Some(1)).await;
         assert!(ctx.contains("src/main.rs:1:  fn main() {"));
         assert!(ctx.contains("src/main.rs:2:>     helper();"));
@@ -471,14 +475,14 @@ mod tests {
             )
             .await;
         assert!(out.contains("budget exhausted"));
-        assert_eq!(s.trace().len(), 3); // 超预算调用不进轨迹
+        assert_eq!(s.trace().len(), 3); // over-budget calls are not recorded in the trace
         assert_eq!(s.trace()[0].name, "read_file");
     }
 
     #[tokio::test]
     async fn show_base_file_fallback_message() {
-        let (_d, s) = setup(); // 非 git 仓库
+        let (_d, s) = setup(); // not a git repository
         let out = show_base_file(&s, "src/main.rs").await;
-        assert!(out.contains("无法读取 base 版本"));
+        assert!(out.contains("cannot read base version"));
     }
 }

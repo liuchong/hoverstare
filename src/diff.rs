@@ -1,10 +1,12 @@
-//! Diff 引擎（spec 03）
+//! Diff engine (spec 03)
 //!
-//! 把 unified diff 解析成结构化数据，回答两个问题：
-//! 1. 审查范围：哪些文件、哪些行被改了；
-//! 2. 可评论行映射：每个文件 RIGHT 侧哪些行号可以挂行内评论。
+//! Parses unified diffs into structured data, answering two questions:
+//! 1. Review scope: which files and which lines were changed;
+//! 2. Commentable-line mapping: for each file, which line numbers on the RIGHT
+//!    side can host inline comments.
 //!
-//! 解析是容错状态机：永不 panic、永不返回 Err（输入视为不可信数据）。
+//! Parsing is a fault-tolerant state machine: it never panics and never returns
+//! Err (input is treated as untrusted data).
 
 use std::collections::BTreeSet;
 
@@ -15,13 +17,13 @@ pub struct ParsedDiff {
 
 #[derive(Debug)]
 pub struct FileDiff {
-    /// 新路径（`+++ b/` 侧）
+    /// New path (`+++ b/` side)
     pub path: String,
-    /// rename 时的旧路径
+    /// Old path in case of a rename
     pub old_path: Option<String>,
     pub kind: FileKind,
     pub hunks: Vec<Hunk>,
-    /// RIGHT 侧所有可评论行号（context + added）
+    /// All commentable line numbers on the RIGHT side (context + added)
     commentable: BTreeSet<u64>,
 }
 
@@ -61,7 +63,7 @@ impl FileDiff {
 }
 
 impl ParsedDiff {
-    /// 容错解析：不认识的行跳过，永不失败
+    /// Fault-tolerant parsing: unrecognized lines are skipped; never fails
     pub fn parse(input: &str) -> ParsedDiff {
         let mut out = ParsedDiff::default();
         let mut current: Option<FileDiff> = None;
@@ -69,7 +71,7 @@ impl ParsedDiff {
         let mut in_hunk = false;
 
         for line in input.lines() {
-            // 新文件开始 → 回到文件头状态
+            // New file starts -> back to file-header state
             if line.starts_with("diff --git ") {
                 if let Some(f) = current.take() {
                     out.files.push(f);
@@ -86,10 +88,10 @@ impl ParsedDiff {
             }
 
             let Some(file) = current.as_mut() else {
-                continue; // 首个 diff --git 之前的内容忽略
+                continue; // ignore anything before the first diff --git
             };
 
-            // hunk 头：进入 hunk 体
+            // hunk header: enter the hunk body
             if let Some(start) = parse_hunk_header(line) {
                 new_line = start;
                 in_hunk = true;
@@ -101,14 +103,16 @@ impl ParsedDiff {
             }
 
             if !in_hunk {
-                // 文件头状态：只有这里才识别 +++ / --- / rename 标记，
-                // hunk 体内以这些字符串开头的内容行不会误判
+                // File-header state: only here are +++ / --- / rename markers
+                // recognized; content lines inside a hunk body that start with
+                // these strings are not misread
                 if let Some(path) = line.strip_prefix("+++ b/") {
                     file.path = path.to_string();
                 } else if line.starts_with("+++ /dev/null") {
                     file.kind = FileKind::Deleted;
                 } else if let Some(old) = line.strip_prefix("--- a/") {
-                    // 删除的文件没有 +++ 侧，path 从旧侧取；rename 时会被 +++ 覆盖
+                    // Deleted files have no +++ side, so path comes from the old
+                    // side; on rename it is overwritten by +++
                     if file.path.is_empty() {
                         file.path = old.to_string();
                     }
@@ -121,7 +125,7 @@ impl ParsedDiff {
                 continue;
             }
 
-            // hunk 体
+            // hunk body
             let content = &line[1.min(line.len())..];
             match line.as_bytes().first() {
                 Some(b' ') => {
@@ -137,14 +141,14 @@ impl ParsedDiff {
                 Some(b'-') => {
                     push_line(file, DiffLine::Deleted);
                 }
-                _ => {} // "\ No newline at end of file" 及其他
+                _ => {} // "\ No newline at end of file" and others
             }
         }
 
         if let Some(f) = current.take() {
             out.files.push(f);
         }
-        // 丢弃没有路径的文件段（异常输入）
+        // Drop file sections without a path (abnormal input)
         out.files.retain(|f| !f.path.is_empty());
         out
     }
@@ -160,14 +164,15 @@ impl ParsedDiff {
         self.files.iter().find(|f| f.path == path)
     }
 
-    /// 找 path 的 line 最近的合法锚点：同行 hunk 最近行 → 全局最近行（spec 03）
+    /// Find the nearest valid anchor for `line` in `path`: nearest line in the
+    /// same hunk -> globally nearest line (spec 03)
     pub fn nearest_anchor(&self, path: &str, line: u64) -> Option<u64> {
         let file = self.file(path)?;
         if file.commentable.contains(&line) {
             return Some(line);
         }
         if let Some(hunk) = file.hunk_of_new_line(line) {
-            // 同一 hunk 内找最近的可评论行
+            // Find the nearest commentable line within the same hunk
             let mut best: Option<u64> = None;
             let mut cur = hunk.new_start;
             for l in &hunk.lines {
@@ -183,14 +188,14 @@ impl ParsedDiff {
                 return best;
             }
         }
-        // 全局最近
+        // Globally nearest
         file.commentable
             .iter()
             .min_by_key(|l| l.abs_diff(line))
             .copied()
     }
 
-    /// 该行（added/context）的代码文本（指纹用，spec 07）
+    /// Code text of the line (added/context) (used for fingerprints, spec 07)
     pub fn line_content(&self, path: &str, line: u64) -> Option<&str> {
         let file = self.file(path)?;
         for hunk in &file.hunks {
@@ -210,12 +215,12 @@ impl ParsedDiff {
         None
     }
 
-    /// 喂给模型的文件清单
+    /// File list fed to the model
     pub fn file_list(&self) -> Vec<String> {
         self.files.iter().map(|f| f.path.clone()).collect()
     }
 
-    /// 新增行总数（spec 05 小 diff 判定用）
+    /// Total number of added lines (used by the spec 05 small-diff check)
     pub fn added_line_count(&self) -> u64 {
         self.files
             .iter()
@@ -226,24 +231,26 @@ impl ParsedDiff {
     }
 }
 
-/// 取某个文件在 diff 文本中的段落（verifier 展示用）
+/// Extract the section of a file from the diff text (for verifier display)
 pub fn section_for_file<'a>(input: &'a str, path: &str) -> Option<&'a str> {
     split_sections(input)
         .into_iter()
         .find(|s| section_path(s) == Some(path))
 }
 
-/// 文本层过滤（spec 03）：在解析前执行，保证喂模型的 diff 与解析输入一致。
-/// 返回（过滤后 diff 文本, 被排除文件数）。
+/// Text-level filtering (spec 03): runs before parsing, ensuring the diff fed
+/// to the model matches the parsed input.
+/// Returns (filtered diff text, number of excluded files).
 ///
-/// 规则：用户 glob + 生成代码启发式（前 5 行新增内容含 `Code generated ... DO NOT EDIT`）。
+/// Rules: user globs + generated-code heuristic (first 5 added lines contain
+/// `Code generated ... DO NOT EDIT`).
 pub fn filter_text(input: &str, ignore: &globset::GlobSet) -> (String, usize) {
     let mut out = String::with_capacity(input.len());
     let mut excluded = 0;
     for section in split_sections(input) {
         let keep = match section_path(section) {
             Some(path) => !ignore.is_match(path) && !looks_generated(section),
-            None => true, // 头部或无法识别路径的段，保留
+            None => true, // header or sections with an unrecognized path are kept
         };
         if keep {
             out.push_str(section);
@@ -257,7 +264,7 @@ pub fn filter_text(input: &str, ignore: &globset::GlobSet) -> (String, usize) {
     (out, excluded)
 }
 
-/// 按 `diff --git ` 边界切分（保留边界行在段首）
+/// Split on `diff --git ` boundaries (boundary line kept at the start of each section)
 fn split_sections(input: &str) -> Vec<&str> {
     let mut boundaries: Vec<usize> = Vec::new();
     let mut pos = 0;
@@ -278,7 +285,7 @@ fn split_sections(input: &str) -> Vec<&str> {
         .collect()
 }
 
-/// 从段内提取文件路径：优先 `+++ b/`，其次 `--- a/`，最后 diff --git 头
+/// Extract the file path from a section: prefer `+++ b/`, then `--- a/`, finally the diff --git header
 fn section_path(section: &str) -> Option<&str> {
     let mut old: Option<&str> = None;
     for line in section.lines() {
@@ -310,14 +317,14 @@ fn looks_generated(section: &str) -> bool {
         .any(|l| l.contains("Code generated") && l.contains("DO NOT EDIT"))
 }
 
-/// 大 diff 截断结果
+/// Result of large-diff truncation
 pub struct Truncation {
     pub text: String,
-    /// 被整体截掉的文件（需告知模型）
+    /// Files dropped entirely (the model must be told about them)
     pub truncated_files: Vec<String>,
 }
 
-/// 文件优先级：源代码 > 测试 > 文档 > 配置 > 其他（spec 03）
+/// File priority: source code > tests > docs > config > other (spec 03)
 const CODE_EXTS: &[&str] = &[
     "rs", "go", "py", "js", "jsx", "ts", "tsx", "java", "kt", "kts", "c", "h", "cc", "cpp", "cxx",
     "hpp", "cs", "rb", "php", "swift", "scala", "sh", "bash", "zsh", "sql", "vue", "svelte", "lua",
@@ -366,10 +373,10 @@ fn path_priority(path: Option<&str>) -> u8 {
     }
 }
 
-/// 大 diff 截断（spec 03）：
-/// - 整文件粒度截断（不截半个文件）；
-/// - 按优先级保留；第一个文件即使超预算也保留（保底）；
-/// - 被截文件列表返回给调用方注入 prompt。
+/// Large-diff truncation (spec 03):
+/// - truncates at whole-file granularity (never cuts a file in half);
+/// - keeps files by priority; the first file is always kept, even over budget (floor guarantee);
+/// - the list of truncated files is returned to the caller for prompt injection.
 pub fn truncate_text(input: &str, max_kb: usize) -> Truncation {
     let budget = max_kb * 1024;
     if input.len() <= budget {
@@ -380,7 +387,7 @@ pub fn truncate_text(input: &str, max_kb: usize) -> Truncation {
     }
 
     let sections = split_sections(input);
-    // (原始序号, 优先级) 排序决定保留顺序
+    // (original index, priority) sorted to decide the keep order
     let mut order: Vec<(usize, u8)> = sections
         .iter()
         .enumerate()
@@ -401,7 +408,7 @@ pub fn truncate_text(input: &str, max_kb: usize) -> Truncation {
         }
     }
 
-    // 保持原始文件顺序输出
+    // Output in the original file order
     let mut text = String::with_capacity(used);
     for (i, s) in sections.iter().enumerate() {
         if kept[i] {
@@ -423,7 +430,7 @@ fn push_line(file: &mut FileDiff, l: DiffLine) {
     }
 }
 
-/// 解析 `@@ -a[,b] +c[,d] @@`，返回新版起始行 c
+/// Parse `@@ -a[,b] +c[,d] @@`, returning the new-side start line c
 fn parse_hunk_header(line: &str) -> Option<u64> {
     let rest = line.strip_prefix("@@ -")?;
     let plus = rest.find(" +")?;
@@ -470,8 +477,9 @@ index 1111111..2222222 100644
 
     #[test]
     fn literal_diff_markers_inside_content_not_misread() {
-        // 有人往文档里贴 diff：内容行以 "+++ b/" 或 "diff --git" 开头，
-        // 在 hunk 体内必须以 '+' 前缀出现，不得当成文件头
+        // Someone pasted a diff into a doc: content lines starting with "+++ b/"
+        // or "diff --git" must appear with a '+' prefix inside the hunk body and
+        // must not be treated as file headers
         let input = "\
 diff --git a/docs/guide.md b/docs/guide.md
 --- a/docs/guide.md
@@ -512,7 +520,7 @@ deleted file mode 100644
         assert_eq!(d.file("new.txt").unwrap().kind, FileKind::Added);
         assert_eq!(d.file("old.txt").unwrap().kind, FileKind::Deleted);
         assert_eq!(d.commentable_lines("new.txt").unwrap().len(), 2);
-        // 删除的文件存在但没有 RIGHT 侧可评论行
+        // Deleted files exist but have no commentable lines on the RIGHT side
         assert!(d.commentable_lines("old.txt").unwrap().is_empty());
     }
 
@@ -556,11 +564,12 @@ diff --git a/a.txt b/a.txt
     #[test]
     fn nearest_anchor_chain() {
         let d = ParsedDiff::parse(SIMPLE);
-        // 合法行原样返回
+        // Valid lines are returned as-is
         assert_eq!(d.nearest_anchor("src/main.rs", 11), Some(11));
-        // 同 hunk 非法行（old 被删，新行 11 才是对应新版位置）→ 吸附到最近可评论行
+        // Invalid line in the same hunk (old was deleted; new line 11 is the
+        // corresponding new-side position) -> snap to the nearest commentable line
         assert_eq!(d.nearest_anchor("src/main.rs", 100), Some(13));
-        // 文件不存在 → None
+        // File does not exist -> None
         assert_eq!(d.nearest_anchor("nope.rs", 1), None);
     }
 
@@ -610,7 +619,7 @@ diff --git a/Cargo.lock b/Cargo.lock
             "d".repeat(3000)
         );
         let input = format!("{code}{big_doc}");
-        // 预算 1KB：代码段必须保留，文档段被截
+        // Budget 1KB: the code section must be kept, the doc section truncated
         let t = truncate_text(&input, 1);
         assert!(t.text.contains("src/a.rs"));
         assert!(!t.text.contains("docs/big.md"));

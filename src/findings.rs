@@ -1,7 +1,9 @@
-//! 模型输出解析与归一化（spec 04 输出容错管线，M1 实现前三级）
+//! Model output parsing and normalization (spec 04 output fault-tolerance
+//! pipeline; M1 implements the first three levels)
 //!
-//! 模型输出不可信：三级 JSON 提取 + 字段归一化后才允许进入系统。
-//! reformat pass（廉价模型重写）与全量重试在 M2 加入。
+//! Model output is untrusted: three-level JSON extraction + field normalization
+//! must happen before it is allowed into the system.
+//! The reformat pass (cheap-model rewrite) and full retry are added in M2.
 
 use serde::Deserialize;
 
@@ -29,19 +31,19 @@ pub struct Location {
 pub struct AnalysisResult {
     pub findings: Vec<Finding>,
     pub summary: String,
-    /// 增量模式：模型判定已修复的历史 finding 指纹（spec 07）
+    /// Incremental mode: fingerprints of historical findings the model judged as fixed (spec 07)
     pub resolved_finding_ids: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum FindingsError {
-    #[error("无法从模型输出中提取 JSON: {0}")]
+    #[error("failed to extract JSON from model output: {0}")]
     Unparseable(String),
-    #[error("模型输出不符合 schema: {0}")]
+    #[error("model output does not match the schema: {0}")]
     SchemaViolation(String),
 }
 
-/// 模型输出的原始形态（字段全宽容忍）
+/// Raw shape of model output (all fields tolerated loosely)
 #[derive(Debug, Deserialize)]
 struct RawAnalysis {
     #[serde(default)]
@@ -52,9 +54,10 @@ struct RawAnalysis {
     resolved_finding_ids: Vec<String>,
 }
 
-/// 模型输出的 JSON schema（spec 04）：机器校验，拒绝结构性错误的输出
-/// （例如把 findings 写成对象、或返回完全不相关的结构——那些输出经归一化后
-/// 会静默变成"0 条 finding"，必须在 schema 层拦截并走 reformat/重试）。
+/// JSON schema for model output (spec 04): machine-checked; structurally wrong
+/// output is rejected (e.g. findings written as an object, or a completely
+/// unrelated structure — those would silently normalize into "0 findings" and
+/// must be intercepted at the schema layer to trigger reformat/retry).
 fn analysis_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -62,7 +65,9 @@ fn analysis_schema() -> serde_json::Value {
         "properties": {
             "findings": {
                 "type": "array",
-                // 条目级问题（缺字段/类型错）由归一化阶段逐条处理，schema 只管顶层结构
+                // Item-level problems (missing fields / wrong types) are handled
+                // one by one during normalization; the schema only governs the
+                // top-level structure
                 "items": {"type": "object"}
             },
             "summary": {"type": "string"},
@@ -71,14 +76,16 @@ fn analysis_schema() -> serde_json::Value {
     })
 }
 
-/// 三级提取 + schema 校验 + 归一化
+/// Three-level extraction + schema validation + normalization
 pub fn parse_analysis(raw: &str) -> Result<AnalysisResult, FindingsError> {
     let text = raw.trim();
     let mut value = extract_json_value(text)
         .ok_or_else(|| FindingsError::Unparseable(text.chars().take(500).collect()))?;
 
-    // 容错整形（与归一化语义一致）：bugs → findings 键统一；非对象条目预先丢弃；
-    // summary 缺省补空串（schema 校验聚焦在顶层结构，条目级问题由归一化处理）
+    // Tolerant reshaping (consistent with normalization semantics): unify the
+    // bugs -> findings key; drop non-object entries up front; default a missing
+    // summary to an empty string (schema validation focuses on top-level
+    // structure; item-level problems are handled by normalization)
     if let Some(obj) = value.as_object_mut() {
         if !obj.contains_key("findings")
             && let Some(bugs) = obj.remove("bugs")
@@ -92,7 +99,7 @@ pub fn parse_analysis(raw: &str) -> Result<AnalysisResult, FindingsError> {
             .or_insert_with(|| serde_json::Value::String(String::new()));
     }
 
-    // schema 校验（结构性错误在此拦截）
+    // schema validation (structural errors are intercepted here)
     if !jsonschema::is_valid(&analysis_schema(), &value) {
         return Err(FindingsError::SchemaViolation(
             text.chars().take(300).collect(),
@@ -104,7 +111,7 @@ pub fn parse_analysis(raw: &str) -> Result<AnalysisResult, FindingsError> {
     Ok(normalize(raw))
 }
 
-/// 三级 JSON 提取：直接 → 围栏 → 花括号
+/// Three-level JSON extraction: direct -> fenced -> braces
 pub(crate) fn extract_json_value(text: &str) -> Option<serde_json::Value> {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(text) {
         return Some(v);
@@ -140,7 +147,7 @@ fn extract_braces(text: &str) -> Option<&str> {
     (end > start).then(|| &text[start..=end])
 }
 
-/// 归一化：模型输出整形为可信结构（spec 04）
+/// Normalization: reshape model output into a trusted structure (spec 04)
 fn normalize(raw: RawAnalysis) -> AnalysisResult {
     let findings = raw
         .findings
@@ -166,7 +173,7 @@ fn normalize_finding(v: serde_json::Value) -> Option<Finding> {
         return None;
     }
 
-    // line：整数 / 数字字符串 / 浮点 都宽容处理
+    // line: tolerate integers / numeric strings / floats
     let line = match obj.get("line") {
         Some(serde_json::Value::Number(n)) => n.as_u64().or_else(|| n.as_f64().map(|f| f as u64)),
         Some(serde_json::Value::String(s)) => s.trim().parse::<u64>().ok(),
@@ -239,7 +246,7 @@ mod tests {
 
     #[test]
     fn parses_fenced_json() {
-        let raw = "分析结果：\n```json\n{\"findings\": [], \"summary\": \"ok\"}\n```\n以上。";
+        let raw = "Analysis result:\n```json\n{\"findings\": [], \"summary\": \"ok\"}\n```\nDone.";
         let r = parse_analysis(raw).unwrap();
         assert_eq!(r.summary, "ok");
     }
@@ -262,9 +269,9 @@ mod tests {
         let r = parse_analysis(raw).unwrap();
         assert_eq!(r.findings.len(), 2);
         assert_eq!(r.findings[0].line, 42);
-        assert_eq!(r.findings[0].severity, Severity::Medium); // 缺省
+        assert_eq!(r.findings[0].severity, Severity::Medium); // default
         assert_eq!(r.findings[1].line, 7);
-        assert_eq!(r.findings[1].severity, Severity::Medium); // 非法值降级
+        assert_eq!(r.findings[1].severity, Severity::Medium); // invalid value downgraded
         assert_eq!(r.findings[1].title, "(untitled)");
     }
 
@@ -275,9 +282,11 @@ mod tests {
 
     #[test]
     fn rejects_structurally_wrong_output() {
-        // findings 是对象而非数组 → schema 拒绝（走 reformat/重试，而非静默 0 finding）
+        // findings is an object instead of an array -> schema rejects (goes to
+        // reformat/retry instead of silently yielding 0 findings)
         assert!(parse_analysis(r#"{"findings": {"file": "a.rs"}, "summary": "s"}"#).is_err());
-        // 完全不相关的结构：归一化本会静默产出 0 条 finding，schema 层拦截
+        // Completely unrelated structure: normalization would silently produce 0
+        // findings, so it is intercepted at the schema layer
         assert!(parse_analysis(r#"{"result": {"text": "no bugs"}}"#).is_err());
     }
 

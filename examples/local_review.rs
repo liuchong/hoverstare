@@ -1,11 +1,13 @@
-//! 本地 diff 审查工具：不依赖 GitHub，直接对本地 diff 文件跑完整分析+渲染。
+//! Local diff review tool: runs the full analysis + rendering on a local diff
+//! file without depending on GitHub.
 //!
-//! 用法：
+//! Usage:
 //!   cargo run --example local_review -- tests/fixtures/buggy.diff [base_ref]
 //!
-//! base_ref 缺省为 main（show_base_file 工具的参照分支）。
-//! 用 GITHUB_WORKSPACE 指定工具沙箱根（缺省当前目录）。
-//! 用于调试与验收（埋雷 diff → 验证行内锚定；调用方场景 → 验证 grep 查证）。
+//! base_ref defaults to main (the reference branch of the show_base_file tool).
+//! Use GITHUB_WORKSPACE to set the tool sandbox root (defaults to current dir).
+//! Used for debugging and acceptance (booby-trapped diffs -> verify inline
+//! anchoring; caller scenarios -> verify grep-based checking).
 
 use std::path::PathBuf;
 
@@ -26,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     let path = std::env::args()
         .nth(1)
         .map(PathBuf::from)
-        .expect("用法: local_review <diff 文件> [base_ref]");
+        .expect("usage: local_review <diff file> [base_ref]");
     let base_ref = std::env::args()
         .nth(2)
         .unwrap_or_else(|| "main".to_string());
@@ -36,9 +38,9 @@ async fn main() -> anyhow::Result<()> {
     let (filtered, excluded) = diff::filter_text(&diff_text, &cfg.ignore);
     let truncated = diff::truncate_text(&filtered, cfg.max_diff_kb);
     let parsed = diff::ParsedDiff::parse(&truncated.text);
-    anyhow::ensure!(!parsed.files.is_empty(), "diff 中无可审查的变更");
+    anyhow::ensure!(!parsed.files.is_empty(), "no reviewable changes in diff");
     tracing::info!(
-        "diff: {} 个文件（过滤 {} 个，截断 {} 个）",
+        "diff: {} files ({} filtered, {} truncated)",
         parsed.files.len(),
         excluded,
         truncated.truncated_files.len()
@@ -55,9 +57,9 @@ async fn main() -> anyhow::Result<()> {
         &mode,
     )
     .await?;
-    tracing::info!("模型报告 {} 条 finding", analysis.findings.len());
+    tracing::info!("model reported {} findings", analysis.findings.len());
 
-    // 工具轨迹（spec 04：调试与回放测试的依据）
+    // Tool trace (spec 04: basis for debugging and replay tests)
     let trace = shared.trace();
     for (i, t) in trace.iter().enumerate() {
         println!(
@@ -70,14 +72,14 @@ async fn main() -> anyhow::Result<()> {
         );
     }
     if trace.is_empty() {
-        println!("[tool] 本次分析未调用工具");
+        println!("[tool] no tools were called in this analysis");
     }
 
     let ctx = report::ReviewContext {
         repo_full_name: "local/demo",
         head_sha: "0000000",
         meta_mode: "full",
-        scope_label: "全量审查",
+        scope_label: "Full review",
         files_reviewed: parsed.files.len(),
         excluded_files: excluded,
         summary: &analysis.summary,

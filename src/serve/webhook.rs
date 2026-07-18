@@ -1,4 +1,4 @@
-//! Webhook 验签与事件解析（spec 10）
+//! Webhook signature verification and event parsing (spec 10)
 
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -7,21 +7,21 @@ use crate::event::MentionEvent;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// 事件：需要一次 review
+/// Event: a review is needed
 #[derive(Debug, Clone)]
 pub struct ReviewEvent {
     pub installation_id: u64,
     pub repo: String,
     pub pr_number: u64,
     pub head_sha: String,
-    /// head 所在仓库（fork PR 与目标仓库不同）
+    /// Repo where the head lives (differs from the target repo for fork PRs)
     pub head_repo: String,
     pub base_ref: String,
     pub draft: bool,
     pub author: String,
 }
 
-/// 事件：需要处理 @hoverstare 评论
+/// Event: an @hoverstare comment needs handling
 #[derive(Debug, Clone)]
 pub struct MentionHookEvent {
     pub installation_id: u64,
@@ -35,7 +35,8 @@ pub enum HookEvent {
     Ignored,
 }
 
-/// HMAC-SHA256 验签（常量时间比较，spec 10：先验签后解析）
+/// HMAC-SHA256 signature verification (constant-time comparison; spec 10:
+/// verify before parsing)
 pub fn verify_signature(secret: &str, body: &[u8], signature_header: &str) -> bool {
     let Some(hex_sig) = signature_header.strip_prefix("sha256=") else {
         return false;
@@ -60,7 +61,7 @@ fn hex_decode(s: &str) -> Result<Vec<u8>, ()> {
         .collect()
 }
 
-/// 解析事件（payload 已通过验签）
+/// Parse an event (the payload has already passed signature verification)
 pub fn parse_event(event_type: &str, payload: &serde_json::Value) -> HookEvent {
     let installation_id = payload["installation"]["id"].as_u64().unwrap_or(0);
     let repo = payload["repository"]["full_name"]
@@ -91,7 +92,7 @@ pub fn parse_event(event_type: &str, payload: &serde_json::Value) -> HookEvent {
             })
         }
         "issue_comment" => {
-            // 纯 issue 不处理（spec 09）
+            // Pure issues are not handled (spec 09)
             if payload["issue"]["pull_request"].is_null() {
                 return HookEvent::Ignored;
             }
@@ -195,7 +196,7 @@ mod tests {
                 assert_eq!(ev.head_repo, "o/r");
                 assert_eq!(ev.base_ref, "main");
             }
-            other => panic!("期望 Review，实际 {other:?}"),
+            other => panic!("expected Review, got {other:?}"),
         }
     }
 
@@ -223,7 +224,7 @@ mod tests {
                 assert_eq!(ev.mention.pr_number, 3);
                 assert!(ev.mention.is_collaborator());
             }
-            other => panic!("期望 Mention，实际 {other:?}"),
+            other => panic!("expected Mention, got {other:?}"),
         }
     }
 
@@ -232,7 +233,7 @@ mod tests {
         let payload = serde_json::json!({
             "action": "created",
             "issue": {"number": 3, "pull_request": {"url": "x"}},
-            "comment": {"id": 11, "body": "普通评论"}
+            "comment": {"id": 11, "body": "plain comment"}
         });
         assert!(matches!(
             parse_event("issue_comment", &payload),

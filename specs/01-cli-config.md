@@ -31,6 +31,7 @@ Commands:
 | env `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`(+`OPENAI_BASE_URL`) | LLM 凭据 |
 | env `GITHUB_WORKSPACE` | checkout 后的仓库根目录（工具沙箱根） |
 | env `HOVERSTARE_MODEL` / `HOVERSTARE_REFORMAT_MODEL` | 覆盖 toml 中的模型名（调试/临时切换用） |
+| env `HOVERSTARE_LANGUAGE` | 覆盖 toml `language`（输出语言，en/zh-CN/ru/fr/de/es） |
 
 非 Actions 环境本地调试时，`--pr` + `GITHUB_REPOSITORY` + 两个 token 即可运行。
 
@@ -70,6 +71,12 @@ status_checks = false
 # 是否给请求设置 temperature。部分端点（如 kimi-for-coding）只接受默认值，
 # 置 false 则不传该字段（多 pass 的多样性改由侧重 prompt 承担）
 set_temperature = true
+
+# 输出语言：PR review 正文/行内评论/help/status check 描述/主要日志/LLM 输出语言。
+# 支持 en / zh-CN / ru / fr / de / es（与 README 语言集一致）。
+# 优先级：HOVERSTARE_LANGUAGE env > 本字段 > 默认 en；无法识别一律回退 en。
+# 机器可读内容（hoverstare-meta、指纹标记、schema、命令名）永不本地化。
+language = "en"
 
 # 自由文本，注入系统提示，写团队特定关注点
 instructions = ""

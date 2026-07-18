@@ -1,18 +1,19 @@
-//! GitHub Actions 事件解析（spec 01/03）
+//! GitHub Actions event parsing (spec 01/03)
 
 use anyhow::{Context as _, bail};
 use serde::Deserialize;
 
 use crate::cli::ReviewArgs;
 
-/// PR 定位信息
+/// PR targeting info
 #[derive(Debug, Clone)]
 pub struct PrRef {
     pub repo: String, // "owner/repo"
     pub number: u64,
 }
 
-/// `@hoverstare` 评论事件（spec 09）：issue_comment 与 pull_request_review_comment 统一
+/// `@hoverstare` comment event (spec 09): unifies issue_comment and
+/// pull_request_review_comment
 #[derive(Debug, Clone)]
 pub struct MentionEvent {
     pub repo: String,
@@ -20,12 +21,13 @@ pub struct MentionEvent {
     pub comment_id: u64,
     pub body: String,
     pub author_association: String,
-    /// pull_request_review_comment 事件中的被回复评论 id（issue_comment 为 None）
+    /// In pull_request_review_comment events, the id of the comment being
+    /// replied to (None for issue_comment)
     pub in_reply_to: Option<u64>,
 }
 
 impl MentionEvent {
-    /// 权限：仅 repo collaborator 可触发（spec 09）
+    /// Permission: only repo collaborators may trigger (spec 09)
     pub fn is_collaborator(&self) -> bool {
         matches!(
             self.author_association.as_str(),
@@ -48,7 +50,7 @@ struct MentionPayload {
 #[derive(Debug, Deserialize)]
 struct MentionIssue {
     number: u64,
-    /// 存在则为 PR 的评论（纯 issue v1 不处理，spec 09）
+    /// If present, this is a comment on a PR (pure issues are not handled in v1, spec 09)
     pull_request: Option<serde_json::Value>,
 }
 
@@ -60,24 +62,24 @@ struct MentionComment {
     in_reply_to_id: Option<u64>,
 }
 
-/// 从 GitHub Actions 环境解析 mention 事件（issue_comment / pull_request_review_comment）
+/// Parse a mention event from the GitHub Actions environment (issue_comment / pull_request_review_comment)
 pub fn resolve_mention() -> anyhow::Result<Option<MentionEvent>> {
     let Ok(path) = std::env::var("GITHUB_EVENT_PATH") else {
         return Ok(None);
     };
     let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("读取 GITHUB_EVENT_PATH ({path})"))?;
+        .with_context(|| format!("failed to read GITHUB_EVENT_PATH ({path})"))?;
     let payload: MentionPayload =
-        serde_json::from_str(&text).with_context(|| format!("解析事件 payload ({path})"))?;
+        serde_json::from_str(&text).with_context(|| format!("failed to parse event payload ({path})"))?;
     let Some(comment) = payload.comment else {
         return Ok(None);
     };
-    let repo = std::env::var("GITHUB_REPOSITORY").context("缺少 GITHUB_REPOSITORY")?;
+    let repo = std::env::var("GITHUB_REPOSITORY").context("missing GITHUB_REPOSITORY")?;
 
-    // issue_comment（PR 会话）或 pull_request_review_comment（线程）
+    // issue_comment (PR conversation) or pull_request_review_comment (thread)
     if let Some(issue) = payload.issue {
         if issue.pull_request.is_none() {
-            return Ok(None); // 纯 issue，v1 不处理
+            return Ok(None); // pure issue, not handled in v1
         }
         return Ok(Some(MentionEvent {
             repo,
@@ -111,27 +113,27 @@ struct EventPr {
     number: u64,
 }
 
-/// 从 GitHub Actions 环境读取 PR 定位
+/// Read PR targeting from the GitHub Actions environment
 fn from_event() -> anyhow::Result<Option<PrRef>> {
     let Ok(path) = std::env::var("GITHUB_EVENT_PATH") else {
         return Ok(None);
     };
     let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("读取 GITHUB_EVENT_PATH ({path})"))?;
+        .with_context(|| format!("failed to read GITHUB_EVENT_PATH ({path})"))?;
     let payload: EventPayload =
-        serde_json::from_str(&text).with_context(|| format!("解析事件 payload ({path})"))?;
+        serde_json::from_str(&text).with_context(|| format!("failed to parse event payload ({path})"))?;
     let Some(pr) = payload.pull_request else {
         return Ok(None);
     };
     let repo = std::env::var("GITHUB_REPOSITORY")
-        .context("事件包含 pull_request 但缺少 GITHUB_REPOSITORY")?;
+        .context("event contains pull_request but GITHUB_REPOSITORY is missing")?;
     Ok(Some(PrRef {
         repo,
         number: pr.number,
     }))
 }
 
-/// 解析本次运行的目标 PR：CLI flag 优先，其次事件
+/// Resolve the target PR for this run: CLI flags first, then the event
 pub fn resolve_pr(args: &ReviewArgs) -> anyhow::Result<PrRef> {
     match (&args.repo, args.pr) {
         (Some(repo), Some(number)) => Ok(PrRef {
@@ -139,9 +141,9 @@ pub fn resolve_pr(args: &ReviewArgs) -> anyhow::Result<PrRef> {
             number,
         }),
         (Some(_), None) | (None, Some(_)) => {
-            bail!("--repo 与 --pr 必须同时提供")
+            bail!("--repo and --pr must be provided together")
         }
         (None, None) => from_event()?
-            .context("无法确定目标 PR：未提供 --repo/--pr，且不在 pull_request 事件环境中"),
+            .context("cannot determine the target PR: --repo/--pr not provided and not running in a pull_request event environment"),
     }
 }

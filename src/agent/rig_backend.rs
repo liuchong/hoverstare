@@ -1,10 +1,11 @@
-//! RigBackend：基于 rig-core 的 AgentBackend 实现（spec 04）
+//! RigBackend: AgentBackend implementation based on rig-core (spec 04)
 //!
-//! 本文件是唯一允许 `use rig::*` 的模块，rig 类型不得外泄。
-//! 接 Kimi Code 等自定义端点走 OpenAI-compatible 路径
-//! （`CompletionsClient` + `base_url`，已经 spike 实测验证，见 spikes/rig-kimi-probe）。
+//! This file is the only module allowed to `use rig::*`; rig types must not leak out.
+//! Custom endpoints such as Kimi Code go through the OpenAI-compatible path
+//! (`CompletionsClient` + `base_url`, verified in a spike, see spikes/rig-kimi-probe).
 //!
-//! 工具集：框架无关实现在 agent/tools.rs，本文件只做 rig Tool trait 的薄包装。
+//! Toolset: the framework-agnostic implementation lives in agent/tools.rs; this file
+//! only provides thin wrappers around the rig Tool trait.
 
 use std::future::{Future, IntoFuture};
 use std::pin::Pin;
@@ -23,12 +24,12 @@ use crate::agent::tools::{self, ToolShared};
 use crate::agent::{AgentBackend, AgentError, ReviewRequest, ReviewRun, Usage};
 use crate::config::LlmCredentials;
 
-/// 单次调用的输出上限（findings JSON 不会很大）
+/// Output limit per call (the findings JSON is never large)
 const MAX_OUTPUT_TOKENS: u64 = 8192;
-/// rig 最大轮次在工具预算上留的余量（收尾轮）
+/// Headroom rig's max turns leaves on top of the tool budget (final turn)
 const TURN_MARGIN: u32 = 2;
 
-/// 按 provider 划一的 prompt future 类型
+/// Uniform prompt future type across providers
 type PromptFuture = Pin<Box<dyn Future<Output = Result<String, PromptError>> + Send>>;
 
 pub struct RigBackend {
@@ -52,7 +53,7 @@ impl AgentBackend for RigBackend {
             Err(_) => return Err(AgentError::Timeout(req.budget.timeout)),
         };
         let tool_trace = shared.map(|s| s.trace()).unwrap_or_default();
-        // M7：token 用量统计待补
+        // M7: token usage accounting still to be added
         Ok(ReviewRun {
             raw_output: raw,
             tool_trace,
@@ -62,7 +63,7 @@ impl AgentBackend for RigBackend {
 }
 
 impl RigBackend {
-    /// 按 provider 构建 prompt future（两个分支类型不同，统一 box）
+    /// Build the prompt future per provider (the two branches have different types, so box them)
     fn build_prompt_future(&self, req: &ReviewRequest) -> Result<PromptFuture, AgentError> {
         let model = req.model.clone();
         let sys = req.system_prompt.clone();
@@ -76,7 +77,7 @@ impl RigBackend {
                 let client = anthropic::Client::builder()
                     .api_key(key.expose_secret())
                     .build()
-                    .map_err(|e| AgentError::Backend(format!("构建 anthropic client: {e}")))?;
+                    .map_err(|e| AgentError::Backend(format!("failed to build anthropic client: {e}")))?;
                 let mut builder = client
                     .agent(&model)
                     .preamble(&sys)
@@ -101,7 +102,7 @@ impl RigBackend {
                     .base_url(base_url)
                     .build()
                     .map_err(|e| {
-                        AgentError::Backend(format!("构建 openai-compatible client: {e}"))
+                        AgentError::Backend(format!("failed to build openai-compatible client: {e}"))
                     })?;
                 let mut builder = client
                     .agent(&model)
@@ -125,7 +126,7 @@ impl RigBackend {
     }
 }
 
-/// 注册只读工具集 + 轮次上限（泛型于两个 provider 的 AgentBuilder）
+/// Register the read-only toolset + turn limit (generic over both providers' AgentBuilder)
 fn with_tools<M, P>(
     builder: rig::agent::AgentBuilder<M, P, rig::agent::NoToolConfig>,
     shared: Arc<ToolShared>,
@@ -150,7 +151,7 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// rig Tool 薄包装（透传到 agent/tools.rs 的框架无关实现）
+// rig Tool thin wrappers (pass-through to the framework-agnostic implementation in agent/tools.rs)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, thiserror::Error)]
@@ -190,47 +191,47 @@ macro_rules! impl_readonly_tool {
 
 #[derive(Deserialize, Debug)]
 struct ReadFileArgs {
-    /// 相对仓库根的文件路径
+    /// File path relative to the repository root
     path: String,
-    /// 起始行（1 起始，含）
+    /// Start line (1-based, inclusive)
     start_line: Option<u64>,
-    /// 结束行（含）
+    /// End line (inclusive)
     end_line: Option<u64>,
 }
 
 #[derive(Deserialize, Debug)]
 struct GrepArgs {
-    /// 正则表达式
+    /// Regular expression
     pattern: String,
-    /// 可选：限定文件或目录（相对仓库根）
+    /// Optional: limit to a file or directory (relative to the repository root)
     path: Option<String>,
-    /// 可选：每个匹配显示的上下文行数
+    /// Optional: number of context lines shown per match
     context_lines: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]
 struct GlobArgs {
-    /// glob 模式（如 src/**/*.rs）
+    /// glob pattern (e.g. src/**/*.rs)
     pattern: String,
 }
 
 #[derive(Deserialize, Debug)]
 struct ShowBaseFileArgs {
-    /// 相对仓库根的文件路径
+    /// File path relative to the repository root
     path: String,
 }
 
 impl_readonly_tool!(
     ReadFileTool,
     "read_file",
-    "读取仓库中某个文件的内容（带行号）。用于查看 diff 周边上下文或符号定义处。",
+    "Read the contents of a file in the repository (with line numbers). Use it to see context around the diff or symbol definitions.",
     ReadFileArgs,
     json!({
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "相对仓库根的文件路径"},
-            "start_line": {"type": "integer", "description": "起始行（1 起始，含），缺省从开头"},
-            "end_line": {"type": "integer", "description": "结束行（含），缺省到结尾"}
+            "path": {"type": "string", "description": "File path relative to the repository root"},
+            "start_line": {"type": "integer", "description": "Start line (1-based, inclusive), defaults to the beginning"},
+            "end_line": {"type": "integer", "description": "End line (inclusive), defaults to the end of file"}
         },
         "required": ["path"]
     }),
@@ -240,14 +241,14 @@ impl_readonly_tool!(
 impl_readonly_tool!(
     GrepTool,
     "grep",
-    "在仓库中做正则搜索。用于查找某个函数/类型的调用点。",
+    "Search the repository with a regular expression. Use it to find call sites of a function or type.",
     GrepArgs,
     json!({
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "正则表达式"},
-            "path": {"type": "string", "description": "可选：限定文件或目录"},
-            "context_lines": {"type": "integer", "description": "可选：每个匹配的上下文行数"}
+            "pattern": {"type": "string", "description": "Regular expression"},
+            "path": {"type": "string", "description": "Optional: limit to a file or directory"},
+            "context_lines": {"type": "integer", "description": "Optional: context lines around each match"}
         },
         "required": ["pattern"]
     }),
@@ -257,12 +258,12 @@ impl_readonly_tool!(
 impl_readonly_tool!(
     GlobTool,
     "glob",
-    "按 glob 模式查找文件。用于定位相关文件。",
+    "Find files matching a glob pattern. Use it to locate related files.",
     GlobArgs,
     json!({
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "glob 模式（如 src/**/*.rs）"}
+            "pattern": {"type": "string", "description": "Glob pattern (e.g. src/**/*.rs)"}
         },
         "required": ["pattern"]
     }),
@@ -272,12 +273,12 @@ impl_readonly_tool!(
 impl_readonly_tool!(
     ShowBaseFileTool,
     "show_base_file",
-    "读取文件在 base 分支（PR 目标分支）的版本。用于对比改动前的行为。",
+    "Read the file as it exists on the base branch (the PR target branch). Use it to compare pre-change behavior.",
     ShowBaseFileArgs,
     json!({
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "相对仓库根的文件路径"}
+            "path": {"type": "string", "description": "File path relative to the repository root"}
         },
         "required": ["path"]
     }),

@@ -1,6 +1,7 @@
-//! serve 模式：可选自部署 webhook 服务（spec 10）
+//! serve mode: optional self-hosted webhook service (spec 10)
 //!
-//! 用户安装 GitHub App 后零配置获得 hoverstare[bot] 审查。
+//! Users get hoverstare[bot] reviews with zero configuration after installing
+//! the GitHub App.
 
 pub mod auth;
 pub mod job;
@@ -21,7 +22,7 @@ use crate::config::Config;
 use crate::serve::auth::AppAuth;
 use crate::serve::webhook::HookEvent;
 
-/// serve 共享状态
+/// serve shared state
 pub struct AppState {
     pub cfg: Config,
     pub auth: Arc<AppAuth>,
@@ -31,7 +32,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// 同一 PR 串行执行（spec 10）
+    /// Serialize executions for the same PR (spec 10)
     pub fn pr_lock(&self, repo: String, pr: u64) -> Arc<tokio::sync::Mutex<()>> {
         self.pr_locks
             .entry(format!("{repo}#{pr}"))
@@ -40,7 +41,7 @@ impl AppState {
     }
 }
 
-/// serve 配置（全部 env，spec 10）
+/// serve configuration (all from env, spec 10)
 pub struct ServeConfig {
     pub app_id: String,
     pub private_key_pem: String,
@@ -52,13 +53,13 @@ pub struct ServeConfig {
 impl ServeConfig {
     pub fn from_env(port: u16) -> anyhow::Result<ServeConfig> {
         let app_id = std::env::var("HOVERSTARE_APP_ID")
-            .map_err(|_| anyhow::anyhow!("缺少 HOVERSTARE_APP_ID"))?;
+            .map_err(|_| anyhow::anyhow!("missing HOVERSTARE_APP_ID"))?;
         let pem_path = std::env::var("HOVERSTARE_APP_PRIVATE_KEY_PATH")
-            .map_err(|_| anyhow::anyhow!("缺少 HOVERSTARE_APP_PRIVATE_KEY_PATH"))?;
+            .map_err(|_| anyhow::anyhow!("missing HOVERSTARE_APP_PRIVATE_KEY_PATH"))?;
         let private_key_pem = std::fs::read_to_string(&pem_path)
-            .map_err(|e| anyhow::anyhow!("读取 private key ({pem_path}) 失败: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("failed to read private key ({pem_path}): {e}"))?;
         let webhook_secret = std::env::var("HOVERSTARE_WEBHOOK_SECRET")
-            .map_err(|_| anyhow::anyhow!("缺少 HOVERSTARE_WEBHOOK_SECRET"))?;
+            .map_err(|_| anyhow::anyhow!("missing HOVERSTARE_WEBHOOK_SECRET"))?;
         let max_jobs = std::env::var("HOVERSTARE_SERVE_MAX_JOBS")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -91,7 +92,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
-    tracing::info!("hoverstare serve 监听 :{port}（/webhook, /healthz）");
+    tracing::info!("hoverstare serve listening on :{port} (/webhook, /healthz)");
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -101,13 +102,13 @@ async fn handle_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> (StatusCode, &'static str) {
-    // 先验签后解析（spec 10）
+    // Verify the signature before parsing (spec 10)
     let signature = headers
         .get("x-hub-signature-256")
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default();
     if !webhook::verify_signature(&state.webhook_secret, &body, signature) {
-        tracing::warn!("webhook 验签失败");
+        tracing::warn!("webhook signature verification failed");
         return (StatusCode::UNAUTHORIZED, "bad signature");
     }
 
@@ -139,10 +140,11 @@ async fn handle_webhook(
     }
 }
 
-// 保留 SecretString 的引用以防将来直接注入
+// Keep a reference to SecretString in case it is injected directly in the future
 #[allow(dead_code)]
 fn _assert_send(_: SecretString) {}
 
-// 让 HashMap 类型在整个文件里被认为已使用（DashMap 替代后可删）
+// Make the HashMap type count as used in this file (can be removed now that
+// DashMap replaced it)
 #[allow(dead_code)]
 type _Unused = HashMap<(), ()>;

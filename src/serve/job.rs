@@ -1,4 +1,4 @@
-//! 任务执行：工作区准备 + 复用编排（spec 10）
+//! Job execution: workspace preparation + orchestration reuse (spec 10)
 
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use crate::orchestrator;
 use crate::serve::AppState;
 use crate::serve::webhook::{MentionHookEvent, ReviewEvent};
 
-/// review 任务：克隆工作区 → 注入安装令牌 → 复用编排
+/// review job: clone workspace -> inject installation token -> reuse orchestration
 pub async fn run_review_job(state: Arc<AppState>, ev: ReviewEvent) {
     let _permit = state.job_semaphore.acquire().await;
     let pr_mutex = state.pr_lock(ev.repo.clone(), ev.pr_number);
@@ -18,7 +18,7 @@ pub async fn run_review_job(state: Arc<AppState>, ev: ReviewEvent) {
 
     let result = run_review_inner(&state, &ev).await;
     if let Err(e) = &result {
-        tracing::warn!("review 任务失败 {}#{}: {e:#}", ev.repo, ev.pr_number);
+        tracing::warn!("review job failed {}#{}: {e:#}", ev.repo, ev.pr_number);
     }
 }
 
@@ -46,11 +46,11 @@ async fn run_review_inner(state: &AppState, ev: &ReviewEvent) -> anyhow::Result<
         dry_run: false,
     };
     let outcome = orchestrator::run_review(&cfg, &args, false).await?;
-    tracing::info!("review 完成 {}#{}: {outcome:?}", ev.repo, ev.pr_number);
+    tracing::info!("review completed {}#{}: {outcome:?}", ev.repo, ev.pr_number);
     Ok(())
 }
 
-/// mention 任务：注入安装令牌 → 复用 mention 编排
+/// mention job: inject installation token -> reuse mention orchestration
 pub async fn run_mention_job(state: Arc<AppState>, ev: MentionHookEvent) {
     let _permit = state.job_semaphore.acquire().await;
     let pr_mutex = state.pr_lock(ev.mention.repo.clone(), ev.mention.pr_number);
@@ -65,14 +65,15 @@ pub async fn run_mention_job(state: Arc<AppState>, ev: MentionHookEvent) {
     .await;
     if let Err(e) = &result {
         tracing::warn!(
-            "mention 任务失败 {}#{}: {e:#}",
+            "mention job failed {}#{}: {e:#}",
             ev.mention.repo,
             ev.mention.pr_number
         );
     }
 }
 
-/// 克隆工作区（spec 10）：目标仓库 + fetch head sha（fork 时回退到 head 仓库）
+/// Clone the workspace (spec 10): target repo + fetch head sha (falls back to
+/// the head repo for forks)
 async fn clone_workspace(
     dir: &std::path::Path,
     repo: &str,
@@ -92,7 +93,8 @@ async fn clone_workspace(
         &["clone", "--depth", "100", "--quiet", &url(repo), "."],
     )
     .await?;
-    // GitHub 支持按 sha fetch 可达提交；fork 的 head sha 不在目标仓库 → 回退到 head 仓库
+    // GitHub supports fetching reachable commits by sha; a fork's head sha is
+    // not in the target repo -> fall back to the head repo
     if run_git(
         dir,
         &["fetch", "--depth", "100", "--quiet", "origin", head_sha],
@@ -139,14 +141,15 @@ async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
         .await?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        // 脱敏：错误里可能带 URL（含 token），一律截断域名前部分
+        // Sanitize: errors may contain the URL (with the token), always truncate
+        // everything from the domain part onward
         let sanitized = stderr.replace("x-access-token:", "x-access-token:***");
         let sanitized = sanitized
             .split('@')
             .next()
             .unwrap_or("git error")
             .to_string();
-        anyhow::bail!("git {} 失败: {sanitized}", args.first().unwrap_or(&""));
+        anyhow::bail!("git {} failed: {sanitized}", args.first().unwrap_or(&""));
     }
     Ok(())
 }

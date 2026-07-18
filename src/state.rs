@@ -1,19 +1,22 @@
-//! 跨 commit 状态（spec 07）
+//! Cross-commit state (spec 07)
 //!
-//! 状态全部存在 GitHub 侧（评论里的隐藏标记 + review body 的元数据注释），
-//! hoverstare 本身无持久化，天然无状态。
+//! All state lives on the GitHub side (hidden markers in comments + metadata
+//! comments in review bodies); hoverstare itself persists nothing and is
+//! naturally stateless.
 
 use std::collections::BTreeSet;
 
 use sha1::{Digest, Sha1};
 
-/// 行内评论里的隐藏标记前缀：`<!-- hoverstare-finding:{fp} -->`
+/// Hidden marker prefix inside inline comments: `<!-- hoverstare-finding:{fp} -->`
 pub const MARKER_PREFIX: &str = "<!-- hoverstare-finding:";
-/// review body 元数据注释标记
+/// Metadata comment marker in review bodies
 pub const META_MARKER: &str = "<!-- hoverstare-meta";
 
-/// finding 指纹：对"哪个文件的哪段代码的什么问题"的稳定标识。
-/// 取行内容而非行号——行号漂移（上方插入新行）不影响指纹稳定性（spec 07）。
+/// Finding fingerprint: a stable identity for "which problem in which code of
+/// which file".
+/// Uses the line content rather than the line number — line drift (new lines
+/// inserted above) does not affect fingerprint stability (spec 07).
 pub fn fingerprint(file: &str, line_content: Option<&str>, title: &str) -> String {
     let mut h = Sha1::new();
     h.update(file.as_bytes());
@@ -22,11 +25,11 @@ pub fn fingerprint(file: &str, line_content: Option<&str>, title: &str) -> Strin
     h.update(b"\n");
     h.update(normalize(title).as_bytes());
     let digest = h.finalize();
-    // 前 8 字节 → 16 hex
+    // first 8 bytes -> 16 hex chars
     digest[..8].iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// 归一化：trim、连续空白折叠、忽略大小写
+/// Normalization: trim, collapse consecutive whitespace, ignore case
 fn normalize(s: &str) -> String {
     s.split_whitespace()
         .collect::<Vec<_>>()
@@ -34,7 +37,8 @@ fn normalize(s: &str) -> String {
         .to_lowercase()
 }
 
-/// 从评论 body 提取全部指纹标记（合并评论可能含多个）
+/// Extract all fingerprint markers from a comment body (merged comments may
+/// contain several)
 pub fn extract_fingerprints(body: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = body;
@@ -54,12 +58,12 @@ pub fn extract_fingerprints(body: &str) -> Vec<String> {
     out
 }
 
-/// 渲染一条指纹标记
+/// Render one fingerprint marker
 pub fn marker(fp: &str) -> String {
     format!("{MARKER_PREFIX}{fp} -->")
 }
 
-/// 从 review body 的元数据注释解析 head_sha
+/// Parse head_sha from the metadata comment of a review body
 pub fn parse_meta_head_sha(body: &str) -> Option<String> {
     let start = body.find(META_MARKER)?;
     let section = &body[start..];
@@ -77,20 +81,21 @@ pub fn parse_meta_head_sha(body: &str) -> Option<String> {
     None
 }
 
-/// 一条未关闭的历史发现（来自 GraphQL review thread）
+/// One unresolved historical finding (from a GraphQL review thread)
 #[derive(Debug, Clone)]
 pub struct OpenFinding {
     pub thread_id: String,
     pub fingerprints: Vec<String>,
-    /// 首条评论去掉 marker 后的人类可读内容
+    /// Human-readable content of the first comment with markers removed
     pub description: String,
-    /// 首条评论是否含 high/critical 级别标记（status check 用）
+    /// Whether the first comment carries a high/critical severity marker (for
+    /// status checks)
     pub has_high_severity: bool,
-    /// 首条评论的 databaseId（resolve 降级回复用）
+    /// databaseId of the first comment (for the resolve fallback reply)
     pub first_comment_id: Option<u64>,
 }
 
-/// 去掉 body 里的全部指纹标记（注入 prompt 前清洗）
+/// Remove all fingerprint markers from a body (cleaning before prompt injection)
 pub fn strip_markers(body: &str) -> String {
     let mut out = String::with_capacity(body.len());
     let mut rest = body;
@@ -106,7 +111,8 @@ pub fn strip_markers(body: &str) -> String {
     out.trim().to_string()
 }
 
-/// 判定可 resolve 的线程（spec 07 规则：线程内全部指纹都修复才 resolve）
+/// Decide which threads can be resolved (spec 07 rule: a thread is resolved
+/// only when every fingerprint in it is fixed)
 pub fn resolvable_threads(open: &[OpenFinding], resolved_fps: &BTreeSet<String>) -> Vec<String> {
     open.iter()
         .filter(|t| {
@@ -123,7 +129,8 @@ mod tests {
     #[test]
     fn fingerprint_stable_under_line_drift_and_formatting() {
         let a = fingerprint("src/a.rs", Some("let x = compute();"), "Null dereference");
-        // 行号漂移不影响（指纹不含行号）；空白/大小写变化不影响
+        // Line drift does not matter (the fingerprint contains no line number);
+        // whitespace/case changes do not matter either
         let b = fingerprint(
             "src/a.rs",
             Some("  let   x = compute();  "),
@@ -131,37 +138,37 @@ mod tests {
         );
         assert_eq!(a, b);
         assert_eq!(a.len(), 16);
-        // 代码实义变化 → 指纹变化
+        // Semantic code change -> fingerprint changes
         let c = fingerprint(
             "src/a.rs",
             Some("let x = compute_v2();"),
             "Null dereference",
         );
         assert_ne!(a, c);
-        // 文件不同 → 指纹变化
+        // Different file -> fingerprint changes
         let d = fingerprint("src/b.rs", Some("let x = compute();"), "Null dereference");
         assert_ne!(a, d);
-        // 无行内容（diff 外文件）也可生成
+        // No line content (file outside the diff) also works
         let e = fingerprint("src/c.rs", None, "t");
         assert_eq!(e.len(), 16);
     }
 
     #[test]
     fn extract_and_strip_markers() {
-        let body = "问题描述\n<!-- hoverstare-finding:0123456789abcdef -->\n\n---\n\n另一个\n<!-- hoverstare-finding:fedcba9876543210 -->";
+        let body = "issue description\n<!-- hoverstare-finding:0123456789abcdef -->\n\n---\n\nanother one\n<!-- hoverstare-finding:fedcba9876543210 -->";
         let fps = extract_fingerprints(body);
         assert_eq!(fps, vec!["0123456789abcdef", "fedcba9876543210"]);
-        assert_eq!(strip_markers(body), "问题描述\n\n\n---\n\n另一个");
-        // 非法内容不提取
+        assert_eq!(strip_markers(body), "issue description\n\n\n---\n\nanother one");
+        // invalid content is not extracted
         assert!(extract_fingerprints("<!-- hoverstare-finding:not-hex! -->").is_empty());
-        assert!(extract_fingerprints("无标记").is_empty());
+        assert!(extract_fingerprints("no markers").is_empty());
     }
 
     #[test]
     fn parse_meta() {
         let body = "## Review\n\n<!-- hoverstare-meta\nmode: full\nhead_sha: abc123def\nfiles_reviewed: 3\n-->";
         assert_eq!(parse_meta_head_sha(body).as_deref(), Some("abc123def"));
-        assert_eq!(parse_meta_head_sha("无元数据"), None);
+        assert_eq!(parse_meta_head_sha("no metadata"), None);
     }
 
     #[test]
@@ -183,7 +190,7 @@ mod tests {
             },
         ];
         let resolved: BTreeSet<String> = ["a".to_string(), "b".to_string()].into_iter().collect();
-        // t1 唯一指纹已修复 → 可 resolve；t2 的 c 未修复 → 不可
+        // t1's only fingerprint is fixed -> resolvable; t2's c is not fixed -> not resolvable
         assert_eq!(resolvable_threads(&open, &resolved), vec!["t1".to_string()]);
     }
 }

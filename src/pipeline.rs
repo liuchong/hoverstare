@@ -1,9 +1,10 @@
-//! 审查管线（spec 05）：多 pass 投票 + verifier 降误报
+//! Review pipeline (spec 05): multi-pass voting + verifier false-positive reduction
 //!
-//! 路径选择：
-//! - `passes = 1` 且 `verify = false` → 直通（M2 容错管线）
-//! - 小 diff（新增行 < 50）→ 1 pass + verify
-//! - 否则 → N 路并行（不同侧重 + 温度错开）→ 聚类 → ≥2 票入选 → 单票 verifier
+//! Path selection:
+//! - `passes = 1` and `verify = false` -> straight through (M2 fault-tolerance pipeline)
+//! - small diff (added lines < 50) -> 1 pass + verify
+//! - otherwise -> N parallel lanes (different focus + staggered temperature) ->
+//!   clustering -> >=2 votes accepted -> single-vote verifier
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -15,20 +16,23 @@ use crate::diff::ParsedDiff;
 use crate::findings::{self, AnalysisResult, Finding};
 use crate::prompt::{self, ReviewMode};
 
-/// 分析全量重试次数（spec 04 输出容错管线第 5 级）
+/// Full-analysis retry count (spec 04 output fault-tolerance pipeline, level 5)
 const MAX_ANALYSIS_ATTEMPTS: u32 = 3;
 #[cfg(not(test))]
 const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 #[cfg(test)]
 const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(1);
-/// reformat pass 的超时（无工具单轮转换，远小于主审）
+/// reformat pass timeout (single-turn conversion without tools, much shorter
+/// than the main review)
 const REFORMAT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
-/// 小 diff 阈值（新增行数），低于它强制 1 pass + verify（spec 05 降级规则）
+/// Small-diff threshold (added lines); below it, force 1 pass + verify (spec 05
+/// degradation rule)
 const SMALL_DIFF_ADDED_LINES: u64 = 50;
-/// verifier 预算为主审的一半
+/// Verifier budget is half of the main review budget
 const VERIFIER_TOOL_BUDGET_DIVISOR: u32 = 2;
 
-/// pass 侧重（spec 05 表）：同骨架，仅侧重段落与温度不同
+/// Pass focus (spec 05 table): same skeleton, only the focus paragraph and
+/// temperature differ
 struct Lens {
     focus: &'static str,
     temp: f64,
@@ -36,15 +40,15 @@ struct Lens {
 
 const LENSES: &[Lens] = &[
     Lens {
-        focus: "正确性：逻辑错误、空解引用、差一错误、错误处理遗漏",
+        focus: "correctness: logic errors, null dereferences, off-by-one errors, missing error handling",
         temp: 0.2,
     },
     Lens {
-        focus: "并发与资源：竞态、死锁、资源泄漏、生命周期",
+        focus: "concurrency & resources: races, deadlocks, leaks, lifetimes",
         temp: 0.4,
     },
     Lens {
-        focus: "安全与边界：注入、越权、输入校验、整数溢出",
+        focus: "security & boundaries: injection, privilege escalation, input validation, integer overflow",
         temp: 0.6,
     },
 ];
@@ -81,7 +85,8 @@ pub async fn run(
     };
     let verify = if small_diff { true } else { cfg.verify };
 
-    // 直通路径（spec 05：passes=1 且无 verify 等价于没有管线）
+    // Straight-through path (spec 05: passes=1 and no verify is equivalent to
+    // having no pipeline)
     if passes == 1 && !verify {
         let analysis = analyze_with_backend(
             backend,
@@ -102,9 +107,9 @@ pub async fn run(
         });
     }
 
-    // ---- N 路并行审查（join_all 借用即可，无需 'static）----
+    // ---- N parallel review lanes (join_all only borrows, no 'static needed) ----
     let extras: Vec<String> = (0..passes)
-        .map(|i| format!("\n\n【本路审查侧重】\n{}", LENSES[i].focus))
+        .map(|i| format!("\n\n[FOCUS OF THIS PASS]\n{}", LENSES[i].focus))
         .collect();
     let futs: Vec<_> = (0..passes)
         .map(|i| {
@@ -136,20 +141,20 @@ pub async fn run(
             }
             Err(e) => {
                 failures += 1;
-                tracing::warn!("pass {} 失败（{}）", i + 1, e);
+                tracing::warn!("pass {} failed ({})", i + 1, e);
             }
         }
     }
     if per_pass.is_empty() {
-        return Err(anyhow::anyhow!("全部 {passes} 路审查均失败"));
+        return Err(anyhow::anyhow!("all {passes} review passes failed"));
     }
     let pass_findings: Vec<usize> = per_pass.iter().map(|v| v.len()).collect();
 
-    // ---- 聚类 ----
+    // ---- Clustering ----
     let clusters = cluster_findings(&per_pass);
     let cluster_count = clusters.len();
 
-    // ---- 投票 ----
+    // ---- Voting ----
     let mut accepted: Vec<Finding> = Vec::new();
     let mut singles: Vec<Finding> = Vec::new();
     for c in &clusters {
@@ -162,7 +167,8 @@ pub async fn run(
     }
     let voted_in = accepted.len();
 
-    // ---- verifier（单票复核；verify=false 时直接丢弃）----
+    // ---- verifier (re-checks single-vote findings; dropped directly when
+    // verify=false) ----
     let mut verified_in = 0usize;
     let mut dropped = 0usize;
     for f in singles {
@@ -178,7 +184,7 @@ pub async fn run(
         }
     }
 
-    // summary 取 finding 数最多 pass 的（spec 05）
+    // summary comes from the pass with the most findings (spec 05)
     let summary = summaries
         .into_iter()
         .max_by_key(|(n, _)| *n)
@@ -203,7 +209,7 @@ pub async fn run(
 }
 
 // ---------------------------------------------------------------------------
-// 聚类与合并（spec 05）
+// Clustering and merging (spec 05)
 // ---------------------------------------------------------------------------
 
 struct Cluster {
@@ -222,7 +228,8 @@ fn is_cjk(c: char) -> bool {
     matches!(c, '\u{4e00}'..='\u{9fff}' | '\u{3400}'..='\u{4dbf}' | '\u{f900}'..='\u{faff}')
 }
 
-/// 标题分词：ASCII 按词，CJK 按单字 + 二字组（中文无空格分词，n-gram 保证重叠可度量）
+/// Title tokenization: ASCII by word, CJK by single character + bigram
+/// (Chinese has no whitespace tokenization; n-grams make overlap measurable)
 fn title_tokens(t: &str) -> BTreeSet<String> {
     fn flush_cjk(run: &mut Vec<char>, tokens: &mut BTreeSet<String>) {
         for c in run.iter() {
@@ -282,7 +289,8 @@ fn title_similarity(a: &str, b: &str) -> f64 {
     inter / union
 }
 
-/// 贪心聚类：同文件 + 行距 ≤3 + 标题 Jaccard ≥0.5 视为同一问题
+/// Greedy clustering: same file + line distance <=3 + title Jaccard >=0.5
+/// counts as the same problem
 fn cluster_findings(per_pass: &[Vec<Finding>]) -> Vec<Cluster> {
     let mut clusters: Vec<Cluster> = Vec::new();
     for (pass_idx, findings) in per_pass.iter().enumerate() {
@@ -309,14 +317,15 @@ fn cluster_findings(per_pass: &[Vec<Finding>]) -> Vec<Cluster> {
     clusters
 }
 
-/// 簇合并：severity 取最高，description 取最长，additional_locations 并集去重
+/// Cluster merge: highest severity, longest description, deduplicated union of
+/// additional_locations
 fn merge_cluster(c: &Cluster) -> Finding {
     let mut best = c
         .members
         .iter()
         .max_by_key(|m| m.severity)
         .cloned()
-        .expect("cluster 非空");
+        .expect("cluster is non-empty");
     if let Some(d) = c
         .members
         .iter()
@@ -338,17 +347,17 @@ fn merge_cluster(c: &Cluster) -> Finding {
 }
 
 // ---------------------------------------------------------------------------
-// verifier（spec 05：单票 finding 独立复核）
+// verifier (spec 05: independent re-check of single-vote findings)
 // ---------------------------------------------------------------------------
 
-const VERIFIER_SYSTEM: &str = r#"你是一名严格的代码审查复核员。你的工作是判断一条审查发现是否是**真实、可触发**的缺陷。
-可以使用只读工具查证（read_file / grep / glob / show_base_file），只做定点查证。
-判定标准：
-- confirmed：你发现该问题在代码中**确实存在**（哪怕触发条件较苛刻），或无法证伪但机理成立；
-- rejected：你能**确定**它不是真实问题（场景不可能发生、代码语义被误读、已有防护）。
-驳回需要证据，存疑从留。
-你的最终回复必须是且仅是一个 JSON 对象：{"verdict": "confirmed|rejected", "confidence": 0.0-1.0, "reason": "一句话理由"}。
-不要散文、不要 markdown 围栏。以 `{` 开始，以 `}` 结束。"#;
+const VERIFIER_SYSTEM: &str = r#"You are a strict code-review verifier. Your job is to judge whether a reported finding is a REAL, TRIGGERABLE defect.
+You may use read-only tools to verify (read_file / grep / glob / show_base_file) — targeted verification only.
+Criteria:
+- confirmed: the problem genuinely exists in the code (even if the trigger is narrow), or it cannot be falsified and the mechanism is sound;
+- rejected: you can DETERMINE it is not a real problem (impossible scenario, misread semantics, already guarded).
+Rejection requires evidence; when in doubt, keep the finding.
+Your final reply MUST be exactly one JSON object: {"verdict": "confirmed|rejected", "confidence": 0.0-1.0, "reason": "one-line reason"}.
+No prose, no markdown fences. Begin with `{` and end with `}`."#;
 
 async fn verify_finding(
     backend: &dyn AgentBackend,
@@ -366,7 +375,7 @@ async fn verify_finding(
         "description": f.description,
     });
     let user = format!(
-        "请复核以下审查发现。用工具查证后再下结论。\n\n【待复核发现】\n{}\n\n【相关 diff 片段】\n{}\n\n【仓库可供查证】",
+        "Verify the following review finding. Use tools to check before concluding.\n\n[Finding under review]\n{}\n\n[Relevant diff section]\n{}\n\n[Repository available for verification]",
         serde_json::to_string_pretty(&finding_json).unwrap_or_default(),
         section
     );
@@ -386,12 +395,12 @@ async fn verify_finding(
     let run = match backend.review(req).await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("verifier 调用失败（按驳回处理）: {e}");
+            tracing::warn!("verifier call failed (treating as rejected): {e}");
             return false;
         }
     };
     let Some(v) = findings::extract_json_value(run.raw_output.trim()) else {
-        tracing::warn!("verifier 输出非 JSON（按驳回处理）");
+        tracing::warn!("verifier output is not JSON (treating as rejected)");
         return false;
     };
     let verdict = v["verdict"].as_str().unwrap_or("rejected");
@@ -400,10 +409,11 @@ async fn verify_finding(
 }
 
 // ---------------------------------------------------------------------------
-// 单次调用与容错管线（spec 04）
+// Single call and fault-tolerance pipeline (spec 04)
 // ---------------------------------------------------------------------------
 
-/// 单次分析调用（无重试，供多 pass 使用；侧重段落追加到系统提示）
+/// Single analysis call (no retries, for multi-pass use; the focus paragraph is
+/// appended to the system prompt)
 #[allow(clippy::too_many_arguments)]
 async fn single_shot(
     backend: &dyn AgentBackend,
@@ -431,14 +441,15 @@ async fn single_shot(
     };
     let run = backend.review(req).await?;
     tracing::debug!(
-        "模型原始输出 ({} 字符): {:.2000}",
+        "raw model output ({} chars): {:.2000}",
         run.raw_output.len(),
         run.raw_output
     );
     findings::parse_analysis(&run.raw_output).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-/// 容错管线（spec 04）：分析 → 解析失败 → reformat pass → 全量重试（最多 3 次）
+/// Fault-tolerance pipeline (spec 04): analyze -> parse failure -> reformat
+/// pass -> full retry (up to 3 times)
 pub async fn analyze_with_backend(
     backend: &dyn AgentBackend,
     cfg: &Config,
@@ -452,7 +463,7 @@ pub async fn analyze_with_backend(
 
     for attempt in 1..=MAX_ANALYSIS_ATTEMPTS {
         if attempt > 1 {
-            tracing::warn!("重试分析 {attempt}/{MAX_ANALYSIS_ATTEMPTS}（{RETRY_DELAY:?} 后）");
+            tracing::warn!("retrying analysis {attempt}/{MAX_ANALYSIS_ATTEMPTS} (in {RETRY_DELAY:?})");
             tokio::time::sleep(RETRY_DELAY).await;
         }
 
@@ -469,7 +480,7 @@ pub async fn analyze_with_backend(
         {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!("agent 调用失败: {e}");
+                tracing::warn!("agent call failed: {e}");
                 last_err = Some(e);
                 continue;
             }
@@ -478,27 +489,28 @@ pub async fn analyze_with_backend(
         match findings::parse_analysis(&run.raw_output) {
             Ok(a) => return Ok(a),
             Err(e) => {
-                tracing::warn!("输出解析失败: {e}");
+                tracing::warn!("output parsing failed: {e}");
                 if !run.raw_output.trim().is_empty() {
                     match reformat_with_backend(backend, cfg, &run.raw_output).await {
                         Ok(a) => {
-                            tracing::info!("reformat pass 成功恢复");
+                            tracing::info!("reformat pass recovered successfully");
                             return Ok(a);
                         }
-                        Err(e2) => tracing::warn!("reformat pass 失败: {e2}"),
+                        Err(e2) => tracing::warn!("reformat pass failed: {e2}"),
                     }
                 } else {
-                    tracing::warn!("模型返回空输出，跳过 reformat 直接重试");
+                    tracing::warn!("model returned empty output, skipping reformat and retrying directly");
                 }
                 last_err = Some(anyhow::anyhow!(e));
             }
         }
     }
 
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("分析失败")))
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("analysis failed")))
 }
 
-/// 单次调用但保留原始输出（容错管线需要原始文本做 reformat）
+/// Single call that keeps the raw output (the fault-tolerance pipeline needs
+/// the raw text for reformat)
 #[allow(clippy::too_many_arguments)]
 async fn single_attempt(
     backend: &dyn AgentBackend,
@@ -525,7 +537,8 @@ async fn single_attempt(
     backend.review(req).await.map_err(|e| anyhow::anyhow!(e))
 }
 
-/// reformat pass（spec 04 第 4 级）：廉价模型把散文输出重写为 schema JSON
+/// reformat pass (spec 04 level 4): a cheap model rewrites prose output into
+/// schema JSON
 async fn reformat_with_backend(
     backend: &dyn AgentBackend,
     cfg: &Config,
@@ -554,7 +567,8 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// 按 system_prompt 是否含"侧重"区分 pass，按脚本依次返回
+    /// Distinguishes passes by whether the system_prompt contains the "focus",
+    /// and returns scripted outputs in order
     struct FakeBackend {
         outputs: Mutex<Vec<Result<&'static str, &'static str>>>,
         calls: AtomicUsize,
@@ -578,8 +592,8 @@ mod tests {
     #[async_trait::async_trait]
     impl AgentBackend for FakeBackend {
         async fn review(&self, req: ReviewRequest) -> Result<ReviewRun, AgentError> {
-            // verifier 调用（system 含"复核员"）
-            if req.system_prompt.contains("复核员") {
+            // verifier call (system contains "code-review verifier")
+            if req.system_prompt.contains("code-review verifier") {
                 let out = self.last_verify_output.lock().unwrap().take();
                 return Ok(ReviewRun {
                     raw_output: out
@@ -588,7 +602,7 @@ mod tests {
                     ..Default::default()
                 });
             }
-            // reformat 调用（无工具 + reformat 模型名）
+            // reformat call (no tools + reformat model name)
             if req.model == "reformat-model" {
                 self.reformat_calls.fetch_add(1, Ordering::SeqCst);
             }
@@ -638,7 +652,7 @@ mod tests {
         )
     }
 
-    // ---------- 聚类与投票 ----------
+    // ---------- Clustering and voting ----------
 
     #[test]
     fn clustering_merges_near_duplicates() {
@@ -662,7 +676,7 @@ mod tests {
             .iter()
             .find(|c| c.members[0].line.abs_diff(10) <= 3)
             .unwrap();
-        assert_eq!(npe.pass_votes.len(), 3); // 三路都报 → 3 票
+        assert_eq!(npe.pass_votes.len(), 3); // reported by all three lanes -> 3 votes
         let overflow = clusters
             .iter()
             .find(|c| c.members[0].line.abs_diff(50) <= 3)
@@ -704,14 +718,14 @@ mod tests {
         let merged = merge_cluster(&c);
         assert_eq!(merged.severity, Severity::Critical);
         assert_eq!(merged.description, "非常非常长的详细描述");
-        assert_eq!(merged.additional_locations.len(), 1); // 去重
+        assert_eq!(merged.additional_locations.len(), 1); // deduplicated
     }
 
-    // ---------- 管线行为 ----------
+    // ---------- Pipeline behavior ----------
 
     #[tokio::test]
     async fn straight_through_when_one_pass_no_verify() {
-        // passes=1 且 verify=false → 走容错管线（M2 行为）
+        // passes=1 and verify=false -> fault-tolerance pipeline (M2 behavior)
         let mut c = cfg();
         c.passes = 1;
         c.verify = false;
@@ -726,7 +740,8 @@ mod tests {
 
     #[tokio::test]
     async fn multi_pass_voting() {
-        // 大 diff、3 路：两路报同一问题（入选），一路独有（进 verifier 被驳回）
+        // Large diff, 3 lanes: two lanes report the same problem (voted in),
+        // one lane-unique finding (rejected by the verifier)
         let mut c = cfg();
         c.passes = 3;
         c.verify = true;
@@ -764,8 +779,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out.stats.passes_run, 3);
-        assert_eq!(out.stats.voted_in, 1); // 共同问题 3 票入选
-        assert_eq!(out.stats.dropped, 1); // 独有问题被 verifier 驳回
+        assert_eq!(out.stats.voted_in, 1); // common problem voted in with 3 votes
+        assert_eq!(out.stats.dropped, 1); // lane-unique problem rejected by the verifier
         assert_eq!(out.analysis.findings.len(), 1);
         assert!(out.analysis.findings[0].title.contains("空指针"));
     }
@@ -783,7 +798,7 @@ mod tests {
             )),
             Ok(r#"{"findings":[],"summary":"s2"}"#),
         ]);
-        // 默认 verifier 输出 confirmed 0.9
+        // default verifier output: confirmed 0.9
         let out = run(&backend, &c, &parsed, &text, &[], &shared(), &mode())
             .await
             .unwrap();
@@ -793,10 +808,10 @@ mod tests {
 
     #[tokio::test]
     async fn small_diff_forces_single_pass_with_verify() {
-        // 小 diff（<50 新增行）：即使 passes=3 也降级为 1 pass + verify
+        // Small diff (<50 added lines): degraded to 1 pass + verify even with passes=3
         let mut c = cfg();
         c.passes = 3;
-        c.verify = false; // 小 diff 强制打开 verify
+        c.verify = false; // small diff forces verify on
         let (parsed, text) = diff_input(10);
         let unique = finding_json("a.rs", 5, "小问题");
         let backend = FakeBackend::new(vec![Ok(Box::leak(
@@ -819,7 +834,7 @@ mod tests {
         let out = run(&backend, &c, &parsed, &text, &[], &shared(), &mode())
             .await
             .unwrap();
-        assert_eq!(out.stats.passes_run, 1); // 只剩一路成功
+        assert_eq!(out.stats.passes_run, 1); // only one lane succeeded
         assert_eq!(out.analysis.summary, "s2");
     }
 
@@ -836,7 +851,7 @@ mod tests {
         );
     }
 
-    // ---------- 容错管线（M2 行为回归） ----------
+    // ---------- Fault-tolerance pipeline (M2 behavior regression) ----------
 
     #[tokio::test]
     async fn prose_recovered_by_reformat() {
@@ -880,7 +895,7 @@ mod tests {
         let r =
             analyze_with_backend(&backend, &cfg(), &parsed, &text, &[], &shared(), &mode()).await;
         assert!(r.is_err());
-        assert_eq!(backend.calls.load(Ordering::SeqCst), 6); // 3 主审 + 3 reformat（FakeBackend 统一计数）
+        assert_eq!(backend.calls.load(Ordering::SeqCst), 6); // 3 main reviews + 3 reformats (FakeBackend counts them together)
     }
 
     #[tokio::test]

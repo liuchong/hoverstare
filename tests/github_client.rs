@@ -450,7 +450,7 @@ async fn skipped_run_still_posts_status_check() {
                 .path("/repos/o/r/statuses/abc123")
                 .body_includes(r#""context":"hoverstare""#)
                 .body_includes(r#""state":"success""#)
-                .body_includes("跳过");
+                .body_includes("Skipped");
             then.status(200).json_body(serde_json::json!({"id": 1}));
         })
         .await;

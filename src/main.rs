@@ -1,4 +1,4 @@
-//! HoverStare CLI 入口（逻辑在 lib，见 cli::run）
+//! HoverStare CLI entry point (logic lives in lib, see cli::run)
 
 #[tokio::main]
 async fn main() {
