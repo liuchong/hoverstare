@@ -15,6 +15,8 @@ on:
     types: [opened, reopened, synchronize]
   issue_comment:
     types: [created]
+  pull_request_review_comment:   # @bugbot explain 的线程回复场景（spec 09）
+    types: [created]
 
 permissions:
   contents: read
