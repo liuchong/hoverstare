@@ -1,0 +1,24 @@
+diff --git a/src/stats.rs b/src/stats.rs
+index 1111111..2222222 100644
+--- a/src/stats.rs
++++ b/src/stats.rs
+@@ -1,5 +1,22 @@
+ pub fn total(values: &[u64]) -> u64 {
+     values.iter().sum()
+ }
++
++pub fn average(values: &[u64]) -> u64 {
++    total(values) / values.len() as u64
++}
++
++pub fn first(values: &[u64]) -> u64 {
++    values.iter().next().unwrap().clone()
++}
++
++pub fn sum_all(values: &[u64]) -> u64 {
++    let mut acc = 0;
++    for i in 0..=values.len() {
++        acc += values[i];
++    }
++    acc
++}

@@ -1,0 +1,51 @@
+# 本仓库自举（dogfood）：用 bugbot 审查 bugbot 自己的 PR。
+# 与用户侧接法的区别：这里从源码构建二进制（避免鸡生蛋问题），
+# 用户应使用 action.yml（下载预编译二进制，见 README）。
+name: Bugbot (dogfood)
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: bugbot-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  bugbot:
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft) ||
+      contains(github.event.comment.body, '@bugbot')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # show_base_file 需要 base 分支历史
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run bugbot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.BUGBOT_LLM_KEY }}
+          OPENAI_BASE_URL: ${{ vars.BUGBOT_LLM_BASE_URL }}
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            issue_comment|pull_request_review_comment)
+              ./target/release/bugbot mention ;;
+            *)
+              ./target/release/bugbot review ;;
+          esac

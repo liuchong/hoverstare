@@ -1,0 +1,190 @@
+# Bugbot 开发计划与 Spec 索引
+
+本目录是 Bugbot 的单一事实来源（single source of truth）。所有功能开发必须先有对应 spec，
+实现与 spec 不一致时以 spec 为准（或先改 spec）。
+
+## 项目一句话
+
+Bugbot 是一个 Rust 编写的 AI 代码审查 bot：以 GitHub Action 形态运行，对 PR 做
+**带仓库上下文的 agentic 审查**，把高置信度的缺陷以行内评论发到 PR 上，并跨 commit
+追踪这些缺陷直到修复。
+
+## Spec 索引
+
+| Spec | 模块 | 里程碑 |
+|---|---|---|
+| [00-overview.md](00-overview.md) | 总体架构、数据流、技术选型、非目标 | — |
+| [01-cli-config.md](01-cli-config.md) | CLI 子命令、配置文件、环境变量、退出码 | M1 |
+| [02-github-client.md](02-github-client.md) | GitHub REST/GraphQL 客户端 | M1 |
+| [03-diff-engine.md](03-diff-engine.md) | diff 解析、可评论行映射、过滤与截断 | M1 |
+| [04-agent-backend.md](04-agent-backend.md) | AgentBackend 抽象、Rig 实现、只读工具集、输出容错 | M1/M3 |
+| [05-review-pipeline.md](05-review-pipeline.md) | 多 pass 编排、投票聚合、verifier | M5 |
+| [06-report-publish.md](06-report-publish.md) | findings 校验、行号锚定、评论渲染、发布与降级 | M2 |
+| [07-incremental-state.md](07-incremental-state.md) | 指纹、增量审查、跨 commit 追踪、自动 resolve | M4 |
+| [08-action-packaging.md](08-action-packaging.md) | action.yml、release 构建、缓存、用户接入 | M7 |
+| [09-mention-commands.md](09-mention-commands.md) | `@bugbot` 评论命令 | M6 |
+
+## 里程碑计划
+
+> 每个里程碑都是可独立验收的垂直切片，按顺序开发。估时以单人全职为参考。
+
+### M1 — 端到端骨架（约 1.5 周）✅ 2026-07-17 完成
+
+**目标**：在 demo PR 上发出第一条合法行内评论。单 pass、无投票、无增量。
+
+- [x] `cargo init`，cli：`bugbot review` 从 `GITHUB_EVENT_PATH` 读取 PR 事件
+- [x] config：env + `.github/bugbot.toml` 合并，含校验（spec 01）
+- [x] github client：GET PR、GET diff、POST reviews（spec 02，先不用 GraphQL）
+- [x] diff engine：parser + 可评论行集合（spec 03，含单测 fixture）
+- [x] agent：`AgentBackend` trait + RigBackend 单 pass，无工具调用（spec 04）
+- [x] **spike**：验证 rig 走自定义 base_url 接 Kimi Code 端点 ✅ 2026-07-17，
+  6/6 通过（`spikes/rig-kimi-probe`），结论已固化进 spec 04
+- [x] publish：行号校验 → inline review 发布；失败降级为摘要评论（spec 06 的子集）
+
+**验收结果**（达成）：
+
+- 公开 PR 端到端 dry-run（0xPlaygrounds/rig#2162，1 文件）：正确判无缺陷，
+  body 渲染与元数据注释正确 ✅
+- 埋雷 diff（tests/fixtures/buggy.diff，3 个 bug）经 `examples/local_review`
+  完整链路：**3/3 命中，行号全部精确**，行内评论格式合法（含 suggestion 块）✅
+- 行号非法时吸附降级链不崩（report 单测覆盖）✅
+- 26 单测全绿 + clippy -D warnings + fmt ✅
+
+**M1 经验记录**（供 M2 参考）：
+
+1. reqwest 的 `.header()` 是追加不是覆盖——Accept 双写导致 GitHub 返回 JSON 而非
+   diff，排查半天。已加注释，httpmock 合约测试（M2）需覆盖响应类型断言。
+2. 实测出现一次模型返回**空输出**（2.5 分钟后）——M2 的重试/reformat 管线
+   必须处理空输出这种形态，不仅是散文。
+
+### M2 — 健壮性（约 1 周）✅ 2026-07-17 完成
+
+**目标**：对畸形的模型输出和大 diff 有完整防线。
+
+- [x] findings 归一化（line 字符串→整数、缺省 severity 等）+ jsonschema 结构校验
+- [x] 行号吸附降级链：同行 hunk 最近行 → 全局最近行（orphan 标注）→ body 段落
+- [x] 同锚点评论合并（防 GitHub 422）
+- [x] 大 diff：ignore 过滤、按文件优先级截断（整文件粒度 + TRUNCATED 声明入 prompt）、
+  >300 文件走 files API 分页回退
+- [x] 输出容错：三级 JSON 解析 → reformat pass（廉价模型）→ 全量重试（最多 3 次）
+- [x] fail-open：分析失败 exit 0；仅发布彻底失败 exit 1（GitHub I/O 失败也纳入
+  fail-open 区间；fail_closed 可反转）
+
+**验收结果**（达成）：
+
+- 坏 JSON / 结构错误输出 / 散文输出 / 空输出：FakeBackend 管线测试 5 项全绿 ✅
+- files API 回退、422 错误透传、429 重试耗尽：httpmock 合约测试 4 项全绿 ✅
+- 断网 exit 0、fail_closed exit 1、配置错误 exit 1：手动验证 ✅
+- 重构后埋雷 diff 回归：3/3 命中、行号精确 ✅
+- 39 测试全绿 + clippy -D warnings + fmt ✅
+
+### M3 — Agentic 循环（约 1.5 周）✅ 2026-07-17 完成
+
+**目标**：模型可以翻仓库做定点验证。
+
+- [x] 只读工具集：read_file / grep / glob / show_base_file（路径沙箱 + 输出截断）
+- [x] RigBackend 接入工具注册与多轮循环，预算控制（max_tool_calls / timeout）
+- [x] 系统提示：JSON-only 契约、不可信数据声明、定点查证纪律
+- [x] 工具调用轨迹记录（结构化日志 + `examples/local_review` 打印，供调试与回放）
+
+**验收结果**（达成）：
+
+- 调用方破坏场景（tests/fixtures/caller_repo，bug 藏在 store.rs 而非 diff 中）：
+  模型**主动 grep `make_id` → read_file `src/store.rs`**，正确报告 CRITICAL
+  （非确定性 ID 破坏主键/去重语义），附 related location 与合理 suggestion ✅
+- 预算耗尽（max_tool_calls=1）：预算闸拦截第 2 次调用，模型基于已有信息
+  优雅收尾输出合法 JSON ✅
+- 沙箱单测：绝对路径 / `..` 逃逸 / 符号链接逃逸全部拒绝；预算闸与轨迹记录正确 ✅
+- 46 测试全绿 + clippy -D warnings + fmt ✅
+
+**M3 经验记录**：
+
+1. rig 0.36 的 `Tool` trait 不要求工具结构体 Serialize/Deserialize，可以放心携带
+   `Arc<ToolShared>`；`AgentBuilder` 是三泛型 `<M, P, ToolState>`，注册工具走
+   `NoToolConfig → WithBuilderTools` 状态迁移。
+2. 轮次上限 = max_tool_calls + 2（收尾轮），给模型留结论空间。
+
+### M4 — 增量审查与跨 commit 追踪（约 1 周）✅ 2026-07-18 完成
+
+**目标**：`synchronize` 事件只审增量，已修复的线程自动 resolve。
+
+- [x] 指纹生成与隐藏标记（spec 07；sha1(path+行内容+标题)[:16]，行号漂移免疫）
+- [x] GraphQL：reviewThreads 查询（分页）+ resolveReviewThread
+- [x] 增量模式：list_reviews 定位上次 bugbot review（meta 注释解析），
+  compare API 取 delta diff 为主审范围，全量 diff 仅锚定
+- [x] 输出 schema 增加 `resolved_finding_ids`；未修复 finding 不重复评论
+  （指纹 ∈ 未关闭集合 → carried_over 跳过）
+- [x] status checks：`bugbot` / `bugbot-findings`（历史线程高危级别从标记 emoji 判定）
+
+**验收结果**（达成）：
+- 指纹稳定性/标记解析/meta 解析/线程 resolve 规则（全指纹修复才 resolve）单测全绿 ✅
+- GraphQL 分页拼接、resolve mutation、errors 字段判断、list_reviews、
+  compare diff、create_status：httpmock 合约测试全绿 ✅
+- 埋雷回归：3/3 命中且每条行内评论带指纹标记 ✅
+- 50 测试全绿 + clippy -D warnings + fmt ✅
+
+### M5 — 多 pass 投票与 verifier（约 1 周）✅ 2026-07-18 完成
+
+**目标**：显著降低误报率。
+
+- [x] 3 路并行 pass（不同侧重 prompt + 温度错开），futures::join_all 并发
+- [x] 聚类合并与投票：≥2 票入选，1 票进 verifier
+  （聚类键：同文件 + 行距 ≤3 + 标题 Jaccard ≥0.5；CJK 用单字+二字组 n-gram 分词）
+- [x] verifier：逐条带工具复核（驳回需证据、存疑从留），驳回即丢弃
+- [x] 小 diff（新增行 < 50）自动降级为 1 pass + verify
+
+**验收结果**（达成）：
+- 聚类/投票/合并/verifier/降级/单 pass 失败不连坐/全失败报错：管线测试全绿 ✅
+- passes=1 && !verify 直通路径 = M2 容错管线，行为回归 ✅
+- 真实回归（小 diff → 1 pass + verify）：verifier 用工具复核，
+  确认 2 条真实 bug（除零/越界）、驳回 1 条 ✅
+- **实测发现并修复**：kimi-for-coding 端点只接受 temperature=1，
+  新增 `set_temperature` 配置（spec 01），置 false 时不传温度字段 ✅
+- 63 测试全绿 + clippy -D warnings + fmt ✅
+
+### M6 — `@bugbot` 评论命令（约 0.5 周）✅ 2026-07-18 完成
+
+**目标**：评论里可以指挥 bot。
+
+- [x] issue_comment / pull_request_review_comment 事件解析，命令：review / explain / help
+- [x] 权限：仅 repo collaborator 可触发（其余只回 👀 reaction）
+- [x] 接单/完成/失败 reaction（🚀/+1/-1）；代码块内的 @bugbot 不响应
+- [x] review 命令强制全量；explain 轻量调用（线程上下文 + 300 字内中文解释）
+- [x] 并发：workflow `concurrency: cancel-in-progress`，最新命令优先（spec 08 示例）
+
+**验收结果**（达成）：
+- 命令解析（含代码块排除）/ 权限判定 / 事件解析（PR 评论/纯 issue/线程回复）单测全绿 ✅
+- reactions 端点区分（issues vs pulls）/ 线程评论获取：httpmock 合约测试全绿 ✅
+- 66 测试全绿 + clippy -D warnings + fmt ✅
+
+### M7 — 发布与打磨（约 1 周）✅ 2026-07-18 完成
+
+**目标**：新仓库 5 分钟接入。
+
+- [x] release workflow：tag → musl 静态二进制 → strip → tar.gz + sha256 →
+  GitHub Release → 大版本浮动 tag（v1 自动跟进修复版）
+- [x] action.yml（composite）：平台识别 → 缓存 → 下载 → sha256 校验 →
+  按事件类型运行 review/mention
+- [x] 用户文档：根 README（2 分钟接入、配置全表、原理、命令、FAQ、GHE）
+- [x] CI workflow：fmt/clippy/test/musl 冒烟；dogfood workflow（源码构建自审）
+- [x] 日志分组（::group:: 三阶段）；AGENTS.md（agent 项目约定）
+- [ ] ~~prompt cache、成本统计~~（rig agent.prompt 不暴露 usage，记为后续优化项）
+
+**验收**：YAML 全部通过校验；action 下载/校验/缓存逻辑待首个 release tag 后
+在 fork 仓库手动验证（spec 08）。
+
+## 测试策略
+
+| 层 | 方法 |
+|---|---|
+| diff parser / 指纹 / 投票聚合 | 纯单测，fixture 驱动（`tests/fixtures/`） |
+| github client | `httpmock` 合约测试（REST + GraphQL） |
+| agent backend | 录制工具轨迹回放；RigBackend 用 mock completion model |
+| 端到端 | demo repo 手动验收（每里程碑一次） |
+
+## 开发约定
+
+- 稳定版 Rust，edition 2024；`cargo fmt` + `cargo clippy -- -D warnings` 必须全绿
+- 错误处理：库代码用 `thiserror`，bin 用 `anyhow`；禁止 `unwrap()`（测试除外）
+- 日志用 `tracing`；机密一律 `secrecy::SecretString`，禁止出现在日志
+- 每个 spec 对应 `src/` 下同名模块；新增模块先补 spec
