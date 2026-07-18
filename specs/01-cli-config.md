@@ -27,6 +27,7 @@ Commands:
 | env `GITHUB_EVENT_PATH` | 事件 payload JSON 路径（Actions 注入） |
 | env `GITHUB_REPOSITORY` | `owner/repo` |
 | env `GITHUB_TOKEN` | GitHub API token（Actions 注入） |
+| env `GH_PAT` | 可选 classic PAT（`repo` scope）。存在时优先于 GITHUB_TOKEN——`resolveReviewThread` 对默认 token 有平台限制（spec 07） |
 | env `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`(+`OPENAI_BASE_URL`) | LLM 凭据 |
 | env `GITHUB_WORKSPACE` | checkout 后的仓库根目录（工具沙箱根） |
 | env `BUGBOT_MODEL` / `BUGBOT_REFORMAT_MODEL` | 覆盖 toml 中的模型名（调试/临时切换用） |

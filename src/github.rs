@@ -92,6 +92,8 @@ pub struct ReviewSummary {
 pub struct ReviewThread {
     pub id: String,
     pub is_resolved: bool,
+    /// 首条评论的 databaseId（REST 回复端点用；FORBIDDEN 降级路径）
+    pub first_comment_id: Option<u64>,
     pub first_comment_body: String,
 }
 
@@ -527,7 +529,7 @@ impl GitHubClient {
         nodes {
           id
           isResolved
-          comments(first: 1) { nodes { body } }
+          comments(first: 1) { nodes { databaseId body } }
         }
         pageInfo { hasNextPage endCursor }
       }
@@ -553,6 +555,7 @@ impl GitHubClient {
                 out.push(ReviewThread {
                     id: node["id"].as_str().unwrap_or_default().to_string(),
                     is_resolved: node["isResolved"].as_bool().unwrap_or(false),
+                    first_comment_id: node["comments"]["nodes"][0]["databaseId"].as_u64(),
                     first_comment_body: node["comments"]["nodes"][0]["body"]
                         .as_str()
                         .unwrap_or_default()
@@ -567,6 +570,26 @@ impl GitHubClient {
             }
         }
         Ok(out)
+    }
+
+    /// 在 review 线程里回复（resolve 的 FORBIDDEN 降级路径，spec 07）
+    pub async fn reply_to_review_comment(
+        &self,
+        repo: &Repo,
+        number: u64,
+        comment_id: u64,
+        body: &str,
+    ) -> Result<(), GitHubError> {
+        let url = format!(
+            "{}/repos/{}/{}/pulls/{number}/comments/{comment_id}/replies",
+            self.api, repo.owner, repo.name
+        );
+        let payload = serde_json::json!({ "body": body });
+        let resp = self
+            .send(|| self.request(reqwest::Method::POST, &url).json(&payload))
+            .await?;
+        Self::error_for_status(resp).await?;
+        Ok(())
     }
 
     /// resolve 一个 review thread（单个失败由调用方记录，不重试）
