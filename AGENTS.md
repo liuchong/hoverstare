@@ -89,6 +89,7 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
 | crates.io（主） | `cargo publish -p hoverstare` |
 | crates.io（别名） | `cargo publish -p bugbot`（在主包索引可见后再发，版本跟随） |
 | Marketplace | Release 编辑页手动勾选（无 API），元数据在根目录 action.yml |
+| GitHub App | HoverStare App（App ID 4331106，Public、无 webhook），action 传 app_id/app_private_key 后评论以 hoverstare[bot] 发布，且不受 resolveReviewThread 平台限制 |
 
 ## 6. 关键决策记录（为什么这么做）
 
@@ -119,6 +120,11 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
 7. **中文标题聚类**：CJK 无空格分词，用单字+二字组 n-gram 算 Jaccard。
 8. **httpmock 的 `mock_async(...)` 要 `.await` 才是 Mock**；429/5xx 重试用
    `with_retry_backoff(1ms)` 加速测试。
+9. **create-github-app-token 会替换后续步骤的 `github.token` 上下文**：
+   App token 无 cache 写权限，action 的 cache 步骤必须显式固定
+   `GITHUB_TOKEN: ${{ github.token }}`。
+10. **concurrency cancel-in-progress 在 run 级别先于 job `if` 生效**：不含命令的
+    评论事件要进独立 noop 组名，否则机器人评论会取消正在跑的审查 run。
 
 ## 8. 配置与秘钥管理
 

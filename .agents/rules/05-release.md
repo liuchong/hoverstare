@@ -12,3 +12,7 @@
    改名前先双查：`github.com/<name>` 与 `github.com/marketplace/actions/<name>`）。
 5. 发版前：`cargo publish --dry-run --allow-dirty` 验证两个包都能打包编译。
 6. tag 打错：删远端 tag + 对应 release → 修正 → 重打（force-push tag）。
+7. 品牌身份模式：HoverStare GitHub App（无 webhook、Public）+ action 的
+   app_id/app_private_key 输入 → create-github-app-token 换 installation token。
+   注意该 action 会替换后续步骤的 github.token 上下文，cache 步骤必须显式固定
+   Actions token；App token 可完整 resolve review threads（无 GITHUB_TOKEN 限制）。
