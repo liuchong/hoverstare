@@ -8,9 +8,9 @@ branding:
 
 inputs:
   version:
-    description: "hoverstare 版本（GitHub Release tag，如 v0.0.2）"
+    description: "hoverstare 版本（GitHub Release tag，如 v0.0.3）"
     required: false
-    default: "v0.0.2"
+    default: "v0.0.3"
 
 runs:
   using: "composite"

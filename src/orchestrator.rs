@@ -66,7 +66,9 @@ async fn post_terminal_status(
     }
 }
 
-/// 跳过路径的统一收口：先写终态 check 再返回
+/// 跳过路径的统一收口：先写终态 checks 再返回。
+/// 跳过 = 无可审内容 → findings 恒为空，findings check 一并 success（spec 07），
+/// 否则 required check 会永远 pending 死锁合并。
 async fn skip_outcome(
     cfg: &Config,
     gh: &GitHubClient,
@@ -75,6 +77,24 @@ async fn skip_outcome(
     reason: String,
 ) -> Outcome {
     post_terminal_status(gh, repo, head_sha, cfg, true, &format!("跳过：{reason}")).await;
+    if cfg.status_checks
+        && let Err(e) = gh
+            .create_status(
+                repo,
+                head_sha,
+                &NewStatus {
+                    context: "hoverstare-findings",
+                    state: StatusState::Success,
+                    description: format!("无可审内容，无发现（{reason}）")
+                        .chars()
+                        .take(140)
+                        .collect(),
+                },
+            )
+            .await
+    {
+        tracing::warn!("写 status check hoverstare-findings 失败: {e}");
+    }
     Outcome::Skipped(reason)
 }
 

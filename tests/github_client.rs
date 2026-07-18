@@ -416,6 +416,9 @@ async fn reply_to_review_comment_works() {
 // 终态 status check（spec 07：跳过路径也必须落地，否则 required check 死锁）
 // ---------------------------------------------------------------------------
 
+/// env 依赖测试的串行锁（GITHUB_API_URL 是进程级共享状态）
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn cfg_with_status_checks(status_checks: bool) -> hoverstare::config::Config {
     unsafe {
         std::env::set_var("OPENAI_API_KEY", "test");
@@ -427,6 +430,7 @@ fn cfg_with_status_checks(status_checks: bool) -> hoverstare::config::Config {
 
 #[tokio::test]
 async fn skipped_run_still_posts_status_check() {
+    let _guard = ENV_LOCK.lock().unwrap();
     let server = MockServer::start_async().await;
     server
         .mock_async(|when, then| {
@@ -474,6 +478,7 @@ async fn skipped_run_still_posts_status_check() {
 
 #[tokio::test]
 async fn no_status_check_when_disabled() {
+    let _guard = ENV_LOCK.lock().unwrap();
     let server = MockServer::start_async().await;
     server
         .mock_async(|when, then| {

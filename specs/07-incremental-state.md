@@ -73,7 +73,7 @@ pub fn fingerprint(file: &str, line_content: &str, title: &str) -> String
 | context | state 规则 |
 |---|---|
 | `hoverstare` | 审查完成或按规则跳过 → success；分析失败且 fail-open（默认）→ success（描述注明未阻塞）；分析失败且 `fail_closed = true` → error |
-| `hoverstare-findings` | 本次 + 未关闭 findings 中无 high/critical → success；否则 failure；分析未完成的失败路径不写此 check |
+| `hoverstare-findings` | 本次 + 未关闭 findings 中无 high/critical → success；否则 failure；按规则跳过（无可审内容）→ success；分析失败路径不写此 check（保持 pending，需重跑或人工介入） |
 
 可被 branch protection 设为必需检查。
 
