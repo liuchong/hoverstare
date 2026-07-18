@@ -90,6 +90,7 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
 | crates.io（别名） | `cargo publish -p bugbot`（在主包索引可见后再发，版本跟随） |
 | Marketplace | Release 编辑页手动勾选（无 API），元数据在根目录 action.yml |
 | GitHub App | HoverStare App（App ID 4331106，Public、无 webhook），action 传 app_id/app_private_key 后评论以 hoverstare[bot] 发布，且不受 resolveReviewThread 平台限制 |
+| serve 模式 | `hoverstare serve`（spec 10）：可选自部署 webhook 服务，用户装 App 零配置即得 hoverstare[bot] 审查；Dockerfile + docs/deploy.md |
 
 ## 6. 关键决策记录（为什么这么做）
 

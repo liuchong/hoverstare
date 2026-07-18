@@ -22,6 +22,15 @@ pub enum Command {
     Review(ReviewArgs),
     /// 处理一条 @hoverstare 评论（M6）
     Mention,
+    /// 以 webhook 服务运行（可选自部署，spec 10）
+    Serve(ServeArgs),
+}
+
+#[derive(Args)]
+pub struct ServeArgs {
+    /// 监听端口（也可由 PORT env 覆盖）
+    #[arg(long)]
+    pub port: Option<u16>,
 }
 
 #[derive(Args)]
@@ -57,6 +66,7 @@ pub async fn run() {
     let code = match args.command {
         Command::Review(review) => run_review(review).await,
         Command::Mention => run_mention().await,
+        Command::Serve(serve_args) => run_serve(serve_args).await,
     };
     std::process::exit(code);
 }
@@ -92,6 +102,21 @@ async fn run_review(args: ReviewArgs) -> i32 {
         }
         Err(e) => {
             tracing::error!("{e:#}");
+            1
+        }
+    }
+}
+
+async fn run_serve(args: ServeArgs) -> i32 {
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .or(args.port)
+        .unwrap_or(8080);
+    match crate::serve::run(port).await {
+        Ok(()) => 0,
+        Err(e) => {
+            tracing::error!("serve 启动失败: {e:#}");
             1
         }
     }

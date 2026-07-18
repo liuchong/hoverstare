@@ -74,6 +74,11 @@ pub async fn run_mention(cfg: &Config) -> anyhow::Result<Outcome> {
     let Some(ev) = crate::event::resolve_mention()? else {
         return Ok(Outcome::Skipped("非评论事件".into()));
     };
+    run_mention_event(cfg, &ev).await
+}
+
+/// 处理一条已解析的 mention 事件（serve 模式复用，spec 10）
+pub async fn run_mention_event(cfg: &Config, ev: &MentionEvent) -> anyhow::Result<Outcome> {
     let Some(cmd) = parse_command(&ev.body) else {
         return Ok(Outcome::Skipped("评论不含 @hoverstare 命令".into()));
     };
@@ -82,7 +87,7 @@ pub async fn run_mention(cfg: &Config) -> anyhow::Result<Outcome> {
 
     // 权限：仅 repo collaborator 可触发（spec 09）
     if !ev.is_collaborator() {
-        let _ = gh.create_reaction(&repo, &ev, "eyes").await;
+        let _ = gh.create_reaction(&repo, ev, "eyes").await;
         return Ok(Outcome::Skipped(format!(
             "评论作者 {} 不是 collaborator，忽略",
             ev.author_association
@@ -90,22 +95,22 @@ pub async fn run_mention(cfg: &Config) -> anyhow::Result<Outcome> {
     }
 
     // 接单反应（spec 09）
-    let _ = gh.create_reaction(&repo, &ev, "rocket").await;
+    let _ = gh.create_reaction(&repo, ev, "rocket").await;
 
     let result = match cmd {
-        MentionCommand::Review => do_review(cfg, &gh, &repo, &ev).await,
-        MentionCommand::Explain => do_explain(cfg, &gh, &repo, &ev).await,
-        MentionCommand::Help => do_help(&gh, &repo, &ev).await,
+        MentionCommand::Review => do_review(cfg, &gh, &repo, ev).await,
+        MentionCommand::Explain => do_explain(cfg, &gh, &repo, ev).await,
+        MentionCommand::Help => do_help(&gh, &repo, ev).await,
     };
 
     match result {
         Ok(msg) => {
-            let _ = gh.create_reaction(&repo, &ev, "+1").await;
+            let _ = gh.create_reaction(&repo, ev, "+1").await;
             tracing::info!("✅ {msg}");
             Ok(Outcome::Published { inline_comments: 0 })
         }
         Err(e) => {
-            let _ = gh.create_reaction(&repo, &ev, "-1").await;
+            let _ = gh.create_reaction(&repo, ev, "-1").await;
             let _ = gh
                 .create_issue_comment(&repo, ev.pr_number, &format!("👁 命令执行失败：{e:#}"))
                 .await;
