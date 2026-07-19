@@ -246,6 +246,17 @@ cargo fmt
 Les specs et le plan de jalons sont dans [`specs/`](specs/README.md) — la
 source de vérité unique pour les décisions de conception.
 
+## Historique des étoiles et contributeurs
+
+Mis à jour quotidiennement par [RepoScope](https://github.com/liuchong/reposcope) — commits sur la branche orpheline `reposcope`, jamais sur `master`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history-dark.svg">
+  <img alt="Star History" src="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history.svg">
+</picture>
+
+![Contributors](https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/contributors.svg)
+
 ## Licence
 
 [1PL — One Public License](https://license.pub/1pl/)

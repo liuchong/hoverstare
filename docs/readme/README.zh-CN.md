@@ -227,6 +227,17 @@ cargo fmt
 
 设计文档与里程碑计划见 [`specs/`](specs/README.md)——设计决策的单一事实来源。
 
+## Star 历史与贡献者
+
+由 [RepoScope](https://github.com/liuchong/reposcope) 每日自动更新——提交到孤立分支 `reposcope`，绝不污染 `master`。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history-dark.svg">
+  <img alt="Star History" src="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history.svg">
+</picture>
+
+![Contributors](https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/contributors.svg)
+
 ## 许可证
 
 [1PL — One Public License](https://license.pub/1pl/)

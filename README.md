@@ -244,6 +244,18 @@ cargo fmt
 Specs and the milestone plan live in [`specs/`](specs/README.md) — the single
 source of truth for design decisions.
 
+## Star history & contributors
+
+Auto-updated daily by [RepoScope](https://github.com/liuchong/reposcope) —
+committed to the orphan `reposcope` branch, never to `master`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history-dark.svg">
+  <img alt="Star History" src="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history.svg">
+</picture>
+
+![Contributors](https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/contributors.svg)
+
 ## License
 
 [1PL — One Public License](https://license.pub/1pl/)

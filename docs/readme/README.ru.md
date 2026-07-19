@@ -243,6 +243,17 @@ cargo fmt
 Спецификации и план вех — в [`specs/`](specs/README.md), единственный
 источник правды по проектным решениям.
 
+## История звёзд и участники
+
+Автоматически обновляется ежедневно с помощью [RepoScope](https://github.com/liuchong/reposcope) — коммиты в orphan-ветку `reposcope`, никогда в `master`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history-dark.svg">
+  <img alt="Star History" src="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history.svg">
+</picture>
+
+![Contributors](https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/contributors.svg)
+
 ## Лицензия
 
 [1PL — One Public License](https://license.pub/1pl/)

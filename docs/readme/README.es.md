@@ -245,6 +245,17 @@ cargo fmt
 Las specs y el plan de hitos están en [`specs/`](specs/README.md) — la fuente
 única de verdad para las decisiones de diseño.
 
+## Historial de estrellas y colaboradores
+
+Actualizado diariamente por [RepoScope](https://github.com/liuchong/reposcope) — commits en la rama huérfana `reposcope`, nunca en `master`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history-dark.svg">
+  <img alt="Star History" src="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history.svg">
+</picture>
+
+![Contributors](https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/contributors.svg)
+
 ## Licencia
 
 [1PL — One Public License](https://license.pub/1pl/)

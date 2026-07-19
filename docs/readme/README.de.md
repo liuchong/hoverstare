@@ -248,6 +248,17 @@ cargo fmt
 Specs und Meilensteinplan liegen in [`specs/`](specs/README.md) — die
 Single Source of Truth für Design-Entscheidungen.
 
+## Star-Verlauf & Mitwirkende
+
+Täglich automatisch aktualisiert von [RepoScope](https://github.com/liuchong/reposcope) — Commits gehen in den Orphan-Branch `reposcope`, niemals in `master`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history-dark.svg">
+  <img alt="Star History" src="https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/star-history.svg">
+</picture>
+
+![Contributors](https://raw.githubusercontent.com/liuchong/hoverstare/reposcope/assets/reposcope/contributors.svg)
+
 ## Lizenz
 
 [1PL — One Public License](https://license.pub/1pl/)
