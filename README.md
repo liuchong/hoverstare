@@ -244,6 +244,10 @@ cargo fmt
 Specs and the milestone plan live in [`specs/`](specs/README.md) — the single
 source of truth for design decisions.
 
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the quality gate, commit-message convention, and PR review process.
+
 ## Star history & contributors
 
 Auto-updated daily by [RepoScope](https://github.com/liuchong/reposcope) —
