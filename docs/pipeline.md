@@ -1,5 +1,7 @@
 # Review pipeline
 
+The review pipeline runs the same diff in parallel review lanes, clusters the findings by location and title, and accepts only findings that receive at least two votes or pass a verifier check. This reduces false positives from the single-pass backend while keeping the same interface.
+
 > Implementation: [`src/pipeline.rs`](../src/pipeline.rs)  
 > Full specification: [`specs/05-review-pipeline.md`](../specs/05-review-pipeline.md)  
 > Underlying single-pass backend: [`specs/04-agent-backend.md`](../specs/04-agent-backend.md)
