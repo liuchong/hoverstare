@@ -1,0 +1,22 @@
+name: RepoScope
+
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reposcope-${{ github.repository }}
+
+jobs:
+  visuals:
+    runs-on: ubuntu-latest
+    steps:
+      # Branch mode: assets are committed to the orphan `reposcope` branch,
+      # never to master. README references raw URLs of that branch.
+      - uses: liuchong/reposcope@v0.1.0
+        with:
+          branch: reposcope
