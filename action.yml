@@ -96,14 +96,26 @@ runs:
             if jq -e '.issue.pull_request == null' "$GITHUB_EVENT_PATH" >/dev/null; then
               cmd="develop"
             else
-              word=$(jq -r '.comment.body // ""' "$GITHUB_EVENT_PATH" \
-                | grep -oE '@hoverstare[[:space:]]+[A-Za-z]+' | head -1 | awk '{print tolower($2)}')
-              case "$word" in review|explain|help|"") cmd="mention" ;; *) cmd="develop" ;; esac
+              after=$(jq -r '.comment.body // ""' "$GITHUB_EVENT_PATH" \
+                | { grep -oE '@hoverstare.*' || true; } | head -1)
+              after="$(echo "${after#@hoverstare}" | xargs || true)"
+              word="$(echo "$after" | awk '{print tolower($1)}')"
+              if [ -z "$after" ] || [ "$word" = "review" ] || [ "$word" = "explain" ] || [ "$word" = "help" ]; then
+                cmd="mention"
+              else
+                cmd="develop"
+              fi
             fi ;;
           pull_request_review_comment|pull_request_review)
-            word=$(jq -r '.comment.body // .review.body // ""' "$GITHUB_EVENT_PATH" \
-              | grep -oE '@hoverstare[[:space:]]+[A-Za-z]+' | head -1 | awk '{print tolower($2)}')
-            case "$word" in review|explain) cmd="mention" ;; *) cmd="develop" ;; esac ;;
+            after=$(jq -r '.comment.body // .review.body // ""' "$GITHUB_EVENT_PATH" \
+              | { grep -oE '@hoverstare.*' || true; } | head -1)
+            after="$(echo "${after#@hoverstare}" | xargs || true)"
+            word="$(echo "$after" | awk '{print tolower($1)}')"
+            if [ -z "$after" ] || [ "$word" = "review" ] || [ "$word" = "explain" ] || [ "$word" = "help" ]; then
+              cmd="mention"
+            else
+              cmd="develop"
+            fi ;;
           *)
             cmd="review" ;;
         esac
