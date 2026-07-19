@@ -23,12 +23,16 @@ permissions:
   statuses: write
 
 concurrency:
-  # 不含 @hoverstare 的评论事件给独立组名，避免无意义的 run 取消正在跑的审查
+  # 不含 @hoverstare 的评论/review 事件给独立组名：run 级并发组先于 job if 生效，
+  # 否则 bot 自己发的 review（pull_request_review 事件）会取消正在跑的审查
   group: >-
     hoverstare-${{
-      (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment')
-      && !contains(github.event.comment.body, '@hoverstare')
-      && format('noop-{0}', github.event.comment.id)
+      ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment')
+        && !contains(github.event.comment.body, '@hoverstare')
+        && format('noop-{0}', github.event.comment.id))
+      || (github.event_name == 'pull_request_review'
+        && !contains(github.event.review.body, '@hoverstare')
+        && format('noop-review-{0}', github.event.review.id))
       || (github.event.pull_request.number || github.event.issue.number)
     }}
   cancel-in-progress: true
