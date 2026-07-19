@@ -226,8 +226,11 @@ impl Config {
         ) {
             (Ok(key), _) if !key.is_empty() => LlmCredentials::OpenAICompatible {
                 key: SecretString::from(key),
+                // empty string (e.g. unset Actions var interpolation) counts as unset
                 base_url: std::env::var("OPENAI_BASE_URL")
-                    .unwrap_or_else(|_| "https://api.openai.com/v1".to_string()),
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
             },
             (_, Ok(key)) if !key.is_empty() => LlmCredentials::Anthropic {
                 key: SecretString::from(key),
