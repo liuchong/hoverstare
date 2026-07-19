@@ -5,10 +5,14 @@
 
 ## 1. 项目是什么
 
-**HoverStare（代号 bugbot）**：Rust 编写的 AI 代码审查 bot，以单一静态二进制
-（musl）通过 GitHub Action 分发。对 PR 做**仓库感知的 agentic 审查**——审查模型
-带只读工具集翻阅仓库做定点验证，多路并行审查 + 投票 + 逐条复核压制误报，
-行内评论精确锚定，跨 commit 指纹追踪每条发现直到修复。
+**HoverStare（代号 bugbot）**：Rust 编写的 AI 仓库 agent，以单一静态二进制
+（musl）通过 GitHub Action 分发。两大功能：**(1) PR 审查**（根基功能）——对 PR 做
+仓库感知的 agentic 审查，审查模型带只读工具集翻阅仓库做定点验证，多路并行
+审查 + 投票 + 逐条复核压制误报，行内评论精确锚定，跨 commit 指纹追踪；
+**(2) Agent 开发模式**（spec 11，M11-M13）——把 issue 和 PR 当成 Web 版 AI 编程
+IDE：issue 里调查/讨论/计划，`@hoverstare go` 后拉分支实现并开 PR；PR 评论区
+下任务，在 PR 分支上开发、commit 并推回本仓库分支，支持自触发熔断和
+`@hoverstare merge`。自有 agent 体系，非桥接。
 
 - 仓库：<https://github.com/liuchong/hoverstare>
 - 双 crates 发布：`hoverstare`（主） + `bugbot`（同代码别名包，行为一致）
@@ -32,6 +36,11 @@
 6. **发布与改名**：先以 bugbot 发布 crates v0.0.1；Marketplace 因名字冲突
    （GitHub 已有同名用户）改名 **HoverStare**，全项目彻底改名；
    crates 双发布（hoverstare 主包 + bugbot 别名包）。
+7. **开发模式（M11-M13，2026-07-19）**：从审查 bot 扩展为开发 agent（spec 11）。
+   关键事实：App 推送可触发 CI、GITHUB_TOKEN 推送不触发；自触发评论是唯一豁免
+   collaborator 校验的 bot 发言；bot 自己发的 review 会产生 pull_request_review
+   事件，并发组必须给它 noop 组名（run 级并发先于 job if 生效），否则取消
+   正在跑的审查。
 
 ## 3. 架构地图
 
@@ -39,15 +48,18 @@
 src/
 ├── main.rs            # 薄入口：cli::run()（与 bugbot 别名二进制共用）
 ├── lib.rs             # 模块声明
-├── cli.rs             # clap 子命令 review/mention + 入口逻辑
+├── cli.rs             # clap 子命令 review/mention/develop + 入口逻辑
 ├── config.rs          # env + .github/hoverstare.toml 合并校验（spec 01）
-├── event.rs           # pull_request / issue_comment 事件解析
+├── event.rs           # pull_request / issue_comment / develop 事件解析
 ├── github.rs          # REST + GraphQL 客户端（spec 02）
 ├── diff.rs            # 容错 diff 解析、过滤、优先级截断（spec 03）
 ├── agent/
-│   ├── mod.rs         # AgentBackend trait（框架切换点，spec 04）
+│   ├── mod.rs         # AgentBackend trait + ToolProfile（审查永远只读）
 │   ├── rig_backend.rs # 唯一允许 use rig::* 的文件 + rig Tool 薄包装
-│   └── tools.rs       # 只读工具集（框架无关）+ 路径沙箱 + 预算 + 轨迹
+│   └── tools.rs       # 只读+写工具集（写仅 develop）+ 路径沙箱 + 预算 + 轨迹
+├── develop.rs         # develop 核心循环：agent 开发 → conventional commit（spec 11）
+├── devagent.rs        # issue/PR 主线编排：讨论/计划/go/开发轮/merge（spec 11）
+├── git.rs             # git 操作（分支/commit/push/fetch/checkout -B，错误脱敏）
 ├── pipeline.rs        # 多 pass 投票 + verifier + 容错管线（spec 05/04）
 ├── prompt.rs          # 系统提示契约（JSON-only、不可信数据、定点查证）
 ├── instructions.rs    # 仓库指令文件加载（base 分支读取，spec 04 §repo-instructions）

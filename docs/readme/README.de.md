@@ -206,6 +206,26 @@ In einem PR posten (nur Repo-Kollaboratoren):
 | `@hoverstare explain` | Antwortet im Thread mit einer verständlichen Erklärung des Befunds |
 | `@hoverstare help` | Befehlsliste |
 
+## Entwicklungsmodus: Issues & PRs als KI-IDE
+
+HoverStare kann auch *entwickeln* — Issues und PRs werden zu einer dialoggesteuerten Entwicklungsumgebung (spec 11):
+
+**Issue-Hauptlinie** — lege ein Issue mit `@hoverstare` an:
+
+1. Es untersucht das Repo und antwortet mit Analyse + Plan (als Kommentar).
+2. Diskutiere einfach durch Antworten; jede Runde wird im Thread beantwortet.
+3. `@hoverstare go` — es erstellt einen Branch, implementiert, pusht und öffnet einen PR (mit `Closes #N`).
+
+**PR-Hauptlinie** — auf jedem PR dieses Repos:
+
+- `@hoverstare <Anweisung>` — es checkt den PR-Branch aus, entwickelt, committet (Conventional Commits, Autor `hoverstare[bot]`), pusht zurück auf den Branch und berichtet per Kommentar. Runden, die ihr Budget ausschöpfen, setzen sich selbst fort (max. 10 Runden pro PR).
+- `@hoverstare merge` — sobald die Checks grün sind und keine Konflikte bestehen, mergt es per Squash.
+
+Einrichtung: füge die Trigger `issues` und `pull_request_review` hinzu und vergib `contents: write` + `issues: write`. Vollständiges Beispiel: `.github/workflows/hoverstare.yml`. Hinweise:
+
+- Nur Repo-Collaborators können Befehle erteilen; Fork-PRs sind ausgeschlossen.
+- Für Pushes übergib ein PAT über den Input `gh_pat` oder nutze ein GitHub-App-Token mit `contents: write` — Pushes mit dem Standard-`GITHUB_TOKEN` lösen **keine** CI aus, Required Checks würden auf Bot-Commits nie laufen.
+
 ## FAQ
 
 **Berechtigungsfehler beim Veröffentlichen?**

@@ -203,6 +203,36 @@ Post in a PR (repo collaborators only):
 | `@hoverstare explain` | Reply in the thread with a plain-language explanation of the finding |
 | `@hoverstare help` | Command list |
 
+## Develop mode: issues & PRs as your AI IDE
+
+HoverStare can also *develop* — issues and PRs become a conversation-driven
+development environment (spec 11):
+
+**Issue mainline** — file an issue mentioning `@hoverstare`:
+
+1. It investigates the repo and replies with an analysis + plan (in comments).
+2. Discuss by simply replying; each round is answered in the thread.
+3. `@hoverstare go` — it creates a branch, implements, pushes, and opens a PR
+   (with `Closes #N`).
+
+**PR mainline** — on any same-repo PR:
+
+- `@hoverstare <instruction>` — it checks out the PR branch, develops, commits
+  (Conventional Commits, authored as `hoverstare[bot]`), pushes back to the
+  branch, and reports in a comment. Rounds that exhaust their budget
+  self-continue (max 10 rounds per PR).
+- `@hoverstare merge` — once checks are green and there are no conflicts, it
+  squash-merges.
+
+Setup: add the `issues` and `pull_request_review` triggers and grant
+`contents: write` + `issues: write`. See `.github/workflows/hoverstare.yml`
+for a complete working example. Notes:
+
+- Only repo collaborators can issue commands; fork PRs are out of scope.
+- For pushes, pass a PAT via the `gh_pat` input or use a GitHub App token with
+  `contents: write` — pushes made with the default `GITHUB_TOKEN` do **not**
+  trigger CI, so required checks would never run on bot commits.
+
 ## FAQ
 
 **Reviews/comments fail with permission errors?**

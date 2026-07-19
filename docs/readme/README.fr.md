@@ -205,6 +205,26 @@ Dans les commentaires d'une PR (collaborateurs du dépôt uniquement) :
 | `@hoverstare explain` | Répond dans le fil avec une explication en langage clair |
 | `@hoverstare help` | Liste des commandes |
 
+## Mode développement : issues et PR comme IDE IA
+
+HoverStare sait aussi *développer* — les issues et PR deviennent un environnement de développement piloté par la conversation (spec 11) :
+
+**Voie issue** — ouvrez une issue mentionnant `@hoverstare` :
+
+1. Il explore le dépôt et répond par une analyse + un plan (en commentaires).
+2. Discutez en répondant simplement ; chaque tour obtient une réponse dans le fil.
+3. `@hoverstare go` — il crée une branche, implémente, pousse et ouvre une PR (avec `Closes #N`).
+
+**Voie PR** — sur toute PR de ce dépôt :
+
+- `@hoverstare <instruction>` — il bascule sur la branche de la PR, développe, committe (Conventional Commits, auteur `hoverstare[bot]`), pousse sur la branche et rend compte en commentaire. Les tours qui épuisent leur budget se relancent automatiquement (10 tours max par PR).
+- `@hoverstare merge` — une fois les checks verts et sans conflit, il fusionne en squash.
+
+Configuration : ajoutez les déclencheurs `issues` et `pull_request_review` et accordez `contents: write` + `issues: write`. Exemple complet dans `.github/workflows/hoverstare.yml`. Remarques :
+
+- Seuls les collaborateurs du dépôt peuvent donner des commandes ; les PR de fork sont hors scope.
+- Pour les push, passez un PAT via l'entrée `gh_pat` ou utilisez un jeton de GitHub App avec `contents: write` — les push du `GITHUB_TOKEN` par défaut ne déclenchent **pas** la CI, et les checks requis ne tourneraient jamais sur les commits du bot.
+
 ## FAQ
 
 **Erreurs de permission à la publication ?**

@@ -204,6 +204,26 @@ Publica en un PR (solo colaboradores del repo):
 | `@hoverstare explain` | Responde en el hilo con una explicación sencilla del hallazgo |
 | `@hoverstare help` | Lista de comandos |
 
+## Modo desarrollo: issues y PRs como tu IDE de IA
+
+HoverStare también puede *desarrollar* — los issues y PRs se convierten en un entorno de desarrollo guiado por conversación (spec 11):
+
+**Línea de issue** — abre un issue mencionando `@hoverstare`:
+
+1. Investiga el repo y responde con un análisis + plan (en comentarios).
+2. Conversa simplemente respondiendo; cada ronda se contesta en el hilo.
+3. `@hoverstare go` — crea una rama, implementa, empuja y abre un PR (con `Closes #N`).
+
+**Línea de PR** — en cualquier PR de este repo:
+
+- `@hoverstare <instrucción>` — cambia a la rama del PR, desarrolla, hace commit (Conventional Commits, autor `hoverstare[bot]`), empuja de vuelta a la rama y reporta en un comentario. Las rondas que agotan el presupuesto se autocontinúan (máx. 10 rondas por PR).
+- `@hoverstare merge` — cuando los checks están en verde y no hay conflictos, fusiona con squash.
+
+Configuración: añade los disparadores `issues` y `pull_request_review` y concede `contents: write` + `issues: write`. Ejemplo completo en `.github/workflows/hoverstare.yml`. Notas:
+
+- Solo los colaboradores del repo pueden dar comandos; los PRs de fork están fuera de alcance.
+- Para los pushes, pasa un PAT con la entrada `gh_pat` o usa un token de GitHub App con `contents: write` — los pushes con el `GITHUB_TOKEN` por defecto **no** disparan CI, así que los checks requeridos nunca correrían en los commits del bot.
+
 ## Preguntas frecuentes
 
 **¿Errores de permisos al publicar?**

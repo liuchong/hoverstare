@@ -190,6 +190,26 @@ HoverStare 会读取仓库级规则文件并应用到审查中（补充但永不
 | `@hoverstare explain` | 在线程里通俗解释该发现 |
 | `@hoverstare help` | 命令列表 |
 
+## 开发模式：把 issue 和 PR 当作 AI 编程 IDE
+
+HoverStare 还能**开发**——issue 和 PR 就是一个对话驱动的开发环境（spec 11）：
+
+**Issue 主线**——提一个带 `@hoverstare` 的 issue：
+
+1. 它会调查仓库，并在评论里回复分析 + 计划。
+2. 直接回复即可讨论；每一轮它都在评论串里作答。
+3. `@hoverstare go`——它会拉分支、实现、推送，并开出 PR（含 `Closes #N`）。
+
+**PR 主线**——在任意本仓 PR 上：
+
+- `@hoverstare <指令>`——它检出 PR 分支进行开发，提交（Conventional Commits，作者为 `hoverstare[bot]`）并推回该分支，然后评论汇报。预算耗尽的轮次会自我续跑（每个 PR 最多 10 轮）。
+- `@hoverstare merge`——checks 全绿且无冲突后，它会 squash 合并。
+
+配置：增加 `issues` 和 `pull_request_review` 触发器，并授予 `contents: write` + `issues: write` 权限。完整可用示例见 `.github/workflows/hoverstare.yml`。注意：
+
+- 只有仓库协作者可以下达命令；fork PR 不在范围内。
+- 推送请使用 `gh_pat` 输入传入 PAT，或具备 `contents: write` 的 GitHub App token——默认 `GITHUB_TOKEN` 的推送**不会**触发 CI，bot 提交将永远跑不了必需检查。
+
 ## 常见问题
 
 **review/评论报权限错误？**

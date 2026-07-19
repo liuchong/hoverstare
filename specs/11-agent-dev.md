@@ -1,6 +1,6 @@
 # Spec 11 — Agent 开发模式（issue 驱动 + PR 循环开发）
 
-状态：Draft
+状态：Implemented（M11-M13，2026-07-19 全链路 Actions 实测通过：issue #4 → 讨论 → go → PR #5 → 开发轮 → merge）
 目标版本：v0.1.0（从 0.0.8 起跳，独立于审查功能的 0.0.x 线）
 
 ## 0. 产品精神
