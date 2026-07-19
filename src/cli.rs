@@ -3,7 +3,7 @@
 use clap::{Args, Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
-use crate::{config, mention, orchestrator};
+use crate::{config, develop, mention, orchestrator};
 
 #[derive(Parser)]
 #[command(name = "hoverstare", version, about = "Repo-aware AI code review bot")]
@@ -22,8 +22,21 @@ pub enum Command {
     Review(ReviewArgs),
     /// Handle an @hoverstare comment (M6)
     Mention,
+    /// Develop on a task with the agent (spec 11; local mode)
+    Develop(DevelopArgs),
     /// Run as a webhook service (optional self-hosted, spec 10)
     Serve(ServeArgs),
+}
+
+#[derive(Args)]
+pub struct DevelopArgs {
+    /// The development task in natural language
+    #[arg(long)]
+    pub task: String,
+
+    /// Do not commit; print what would change instead
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Args)]
@@ -66,6 +79,7 @@ pub async fn run() {
     let code = match args.command {
         Command::Review(review) => run_review(review).await,
         Command::Mention => run_mention().await,
+        Command::Develop(develop_args) => run_develop(develop_args).await,
         Command::Serve(serve_args) => run_serve(serve_args).await,
     };
     std::process::exit(code);
@@ -102,6 +116,38 @@ async fn run_review(args: ReviewArgs) -> i32 {
         }
         Err(e) => {
             tracing::error!("{e:#}");
+            1
+        }
+    }
+}
+
+async fn run_develop(args: DevelopArgs) -> i32 {
+    let cfg = match load_config() {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+    let backend = crate::agent::rig_backend::RigBackend::new(cfg.llm.clone());
+    let budget = cfg.max_tool_calls.max(develop::DEFAULT_BUDGET_CALLS);
+    match develop::run(
+        &cfg.workspace,
+        &args.task,
+        args.dry_run,
+        &backend,
+        &cfg.model,
+        cfg.temp(0.0),
+        budget,
+    )
+    .await
+    {
+        Ok(outcome) => {
+            println!("{}", outcome.summary);
+            if let Some(sha) = outcome.commit {
+                tracing::info!("✅ committed: {}", &sha[..sha.len().min(10)]);
+            }
+            0
+        }
+        Err(e) => {
+            tracing::error!("develop failed: {e:#}");
             1
         }
     }

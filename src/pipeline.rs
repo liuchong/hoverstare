@@ -389,6 +389,7 @@ async fn verify_finding(
         user_prompt: user,
         tools: ToolRegistry {
             shared: Some(shared.clone()),
+            ..Default::default()
         },
         budget: Budget {
             max_tool_calls: (cfg.max_tool_calls / VERIFIER_TOOL_BUDGET_DIVISOR).max(1),
@@ -437,6 +438,7 @@ async fn single_shot(
         user_prompt: prompt::user_prompt(diff_text, parsed, cfg, truncated_files, mode),
         tools: ToolRegistry {
             shared: Some(shared.clone()),
+            ..Default::default()
         },
         budget: Budget {
             max_tool_calls: cfg.max_tool_calls,
@@ -540,6 +542,7 @@ async fn single_attempt(
         user_prompt: prompt::user_prompt(diff_text, parsed, cfg, truncated_files, mode),
         tools: ToolRegistry {
             shared: Some(shared.clone()),
+            ..Default::default()
         },
         budget: Budget {
             max_tool_calls: cfg.max_tool_calls,

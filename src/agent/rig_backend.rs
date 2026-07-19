@@ -21,7 +21,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::agent::tools::{self, ToolShared};
-use crate::agent::{AgentBackend, AgentError, ReviewRequest, ReviewRun, Usage};
+use crate::agent::{AgentBackend, AgentError, ReviewRequest, ReviewRun, ToolProfile, Usage};
 use crate::config::LlmCredentials;
 
 /// Output limit per call (the findings JSON is never large)
@@ -89,7 +89,8 @@ impl RigBackend {
                 }
                 Ok(match shared {
                     Some(shared) => {
-                        let agent = with_tools(builder, shared, max_turns).build();
+                        let agent =
+                            with_tools(builder, shared, req.tools.profile, max_turns).build();
                         Box::pin(agent.prompt(user).into_future())
                     }
                     None => {
@@ -117,7 +118,8 @@ impl RigBackend {
                 }
                 Ok(match shared {
                     Some(shared) => {
-                        let agent = with_tools(builder, shared, max_turns).build();
+                        let agent =
+                            with_tools(builder, shared, req.tools.profile, max_turns).build();
                         Box::pin(agent.prompt(user).into_future())
                     }
                     None => {
@@ -130,17 +132,20 @@ impl RigBackend {
     }
 }
 
-/// Register the read-only toolset + turn limit (generic over both providers' AgentBuilder)
+/// Register the toolset for the given profile + turn limit
+/// (generic over both providers' AgentBuilder).
+/// ReadOnly: 4 read tools. ReadWrite (develop loop): + edit_file/write_file.
 fn with_tools<M, P>(
     builder: rig::agent::AgentBuilder<M, P, rig::agent::NoToolConfig>,
     shared: Arc<ToolShared>,
+    profile: ToolProfile,
     max_turns: usize,
 ) -> rig::agent::AgentBuilder<M, P, rig::agent::WithBuilderTools>
 where
     M: rig::completion::CompletionModel,
     P: rig::agent::PromptHook<M>,
 {
-    builder
+    let b = builder
         .tool(ReadFileTool {
             shared: shared.clone(),
         })
@@ -150,8 +155,18 @@ where
         .tool(GlobTool {
             shared: shared.clone(),
         })
-        .tool(ShowBaseFileTool { shared })
-        .default_max_turns(max_turns)
+        .tool(ShowBaseFileTool {
+            shared: shared.clone(),
+        });
+    let b = if profile == ToolProfile::ReadWrite {
+        b.tool(EditFileTool {
+            shared: shared.clone(),
+        })
+        .tool(WriteFileTool { shared })
+    } else {
+        b
+    };
+    b.default_max_turns(max_turns)
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +177,7 @@ where
 #[error("{0}")]
 struct ToolErr(String);
 
-macro_rules! impl_readonly_tool {
+macro_rules! impl_tool {
     ($ty:ident, $name:literal, $desc:literal, $args:ident, $params:expr, |$s:ident, $a:ident| $body:expr) => {
         struct $ty {
             shared: Arc<ToolShared>,
@@ -225,7 +240,7 @@ struct ShowBaseFileArgs {
     path: String,
 }
 
-impl_readonly_tool!(
+impl_tool!(
     ReadFileTool,
     "read_file",
     "Read the contents of a file in the repository (with line numbers). Use it to see context around the diff or symbol definitions.",
@@ -242,7 +257,7 @@ impl_readonly_tool!(
     |s, a| tools::read_file(s, &a.path, a.start_line, a.end_line)
 );
 
-impl_readonly_tool!(
+impl_tool!(
     GrepTool,
     "grep",
     "Search the repository with a regular expression. Use it to find call sites of a function or type.",
@@ -259,7 +274,7 @@ impl_readonly_tool!(
     |s, a| tools::grep(s, &a.pattern, a.path.as_deref(), a.context_lines)
 );
 
-impl_readonly_tool!(
+impl_tool!(
     GlobTool,
     "glob",
     "Find files matching a glob pattern. Use it to locate related files.",
@@ -274,7 +289,7 @@ impl_readonly_tool!(
     |s, a| tools::glob(s, &a.pattern)
 );
 
-impl_readonly_tool!(
+impl_tool!(
     ShowBaseFileTool,
     "show_base_file",
     "Read the file as it exists on the base branch (the PR target branch). Use it to compare pre-change behavior.",
@@ -287,4 +302,55 @@ impl_readonly_tool!(
         "required": ["path"]
     }),
     |s, a| tools::show_base_file(s, &a.path)
+);
+
+#[derive(Deserialize, Debug)]
+struct EditFileArgs {
+    /// File path relative to the repository root (must already exist)
+    path: String,
+    /// Exact text to replace; must occur exactly once in the file
+    old_string: String,
+    /// Replacement text
+    new_string: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct WriteFileArgs {
+    /// File path relative to the repository root (created or overwritten)
+    path: String,
+    /// Full file content
+    content: String,
+}
+
+impl_tool!(
+    EditFileTool,
+    "edit_file",
+    "Replace exact text in an existing file. old_string must match exactly once — include enough surrounding context to make it unique.",
+    EditFileArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "File path relative to the repository root"},
+            "old_string": {"type": "string", "description": "Exact text to replace (must occur exactly once in the file)"},
+            "new_string": {"type": "string", "description": "Replacement text"}
+        },
+        "required": ["path", "old_string", "new_string"]
+    }),
+    |s, a| tools::edit_file(s, &a.path, &a.old_string, &a.new_string)
+);
+
+impl_tool!(
+    WriteFileTool,
+    "write_file",
+    "Create a new file or overwrite an existing file with the given content. Prefer edit_file for targeted changes to existing files.",
+    WriteFileArgs,
+    json!({
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "File path relative to the repository root"},
+            "content": {"type": "string", "description": "Full file content"}
+        },
+        "required": ["path", "content"]
+    }),
+    |s, a| tools::write_file(s, &a.path, &a.content)
 );

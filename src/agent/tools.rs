@@ -139,6 +139,49 @@ impl ToolShared {
         }
     }
 
+    /// Like `resolve_path`, but safe for paths that don't exist yet (write
+    /// tools): walks up to the nearest existing ancestor and canonicalizes
+    /// it, so a symlinked directory in the middle cannot redirect a write
+    /// outside the workspace.
+    fn resolve_path_for_write(&self, rel: &str) -> Result<PathBuf, String> {
+        let candidate = self.resolve_path(rel)?;
+        if candidate.exists() {
+            return Ok(candidate); // already canonicalized by resolve_path
+        }
+        let mut rest: Vec<PathBuf> = vec![
+            candidate
+                .file_name()
+                .ok_or_else(|| format!("invalid path: {rel}"))?
+                .into(),
+        ];
+        let mut anc = candidate
+            .parent()
+            .ok_or_else(|| format!("invalid path: {rel}"))?
+            .to_path_buf();
+        while !anc.exists() {
+            rest.push(
+                anc.file_name()
+                    .ok_or_else(|| format!("invalid path: {rel}"))?
+                    .into(),
+            );
+            anc = anc
+                .parent()
+                .ok_or_else(|| format!("invalid path: {rel}"))?
+                .to_path_buf();
+        }
+        let canon = anc
+            .canonicalize()
+            .map_err(|e| format!("cannot access {rel}: {e}"))?;
+        if !canon.starts_with(&self.workspace) {
+            return Err(format!("symlink escape: {rel}"));
+        }
+        let mut out = canon;
+        for c in rest.iter().rev() {
+            out.push(c);
+        }
+        Ok(out)
+    }
+
     /// Walk workspace files (gitignore-aware + forced skip dirs), yielding relative paths
     fn walk_files(&self) -> Vec<PathBuf> {
         let mut out = Vec::new();
@@ -331,6 +374,96 @@ pub async fn glob(shared: &ToolShared, pattern: &str) -> String {
     out
 }
 
+/// Maximum file size editable via edit_file (same cap as read_file).
+const MAX_EDIT_FILE_BYTES: u64 = MAX_GREP_FILE_BYTES * 4;
+/// Maximum content size for write_file.
+const MAX_WRITE_BYTES: usize = 256 * 1024;
+
+/// edit_file: exact, unique-match replacement (spec 11 §4). Never fuzzy:
+/// `old_string` must occur exactly once in the file.
+pub async fn edit_file(
+    shared: &ToolShared,
+    path: &str,
+    old_string: &str,
+    new_string: &str,
+) -> String {
+    if old_string.is_empty() {
+        return "edit_file error: old_string must not be empty".to_string();
+    }
+    if old_string == new_string {
+        return "edit_file error: old_string and new_string are identical".to_string();
+    }
+    let p = match shared.resolve_path_for_write(path) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let meta = match std::fs::metadata(&p) {
+        Ok(m) => m,
+        Err(_) => {
+            return format!(
+                "edit_file error: file does not exist: {path} (use write_file to create it)"
+            );
+        }
+    };
+    if meta.is_dir() {
+        return format!("edit_file error: {path} is a directory");
+    }
+    if meta.len() > MAX_EDIT_FILE_BYTES {
+        return format!(
+            "edit_file error: file too large ({} bytes), refusing to edit",
+            meta.len()
+        );
+    }
+    let bytes = match std::fs::read(&p) {
+        Ok(b) => b,
+        Err(e) => return format!("edit_file error: failed to read {path}: {e}"),
+    };
+    let text = match String::from_utf8(bytes) {
+        Ok(t) => t,
+        Err(_) => return format!("edit_file error: {path} is not a UTF-8 text file"),
+    };
+    let count = text.matches(old_string).count();
+    if count == 0 {
+        return format!("edit_file error: old_string not found in {path}");
+    }
+    if count > 1 {
+        return format!(
+            "edit_file error: old_string matches {count} locations in {path}; it must be unique — include more surrounding context"
+        );
+    }
+    let updated = text.replacen(old_string, new_string, 1);
+    match std::fs::write(&p, updated.as_bytes()) {
+        Ok(()) => format!("edited {path} ({} -> {} bytes)", meta.len(), updated.len()),
+        Err(e) => format!("edit_file error: failed to write {path}: {e}"),
+    }
+}
+
+/// write_file: create or overwrite a whole file (spec 11 §4).
+pub async fn write_file(shared: &ToolShared, path: &str, content: &str) -> String {
+    if content.len() > MAX_WRITE_BYTES {
+        return format!(
+            "write_file error: content too large ({} bytes, max {MAX_WRITE_BYTES})",
+            content.len()
+        );
+    }
+    let p = match shared.resolve_path_for_write(path) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if p.is_dir() {
+        return format!("write_file error: {path} is a directory");
+    }
+    if let Some(parent) = p.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return format!("write_file error: cannot create directories for {path}: {e}");
+    }
+    match std::fs::write(&p, content.as_bytes()) {
+        Ok(()) => format!("wrote {path} ({} bytes)", content.len()),
+        Err(e) => format!("write_file error: failed to write {path}: {e}"),
+    }
+}
+
 /// show_base_file: read the base-branch version (the only allowed process call, fixed argument format)
 pub async fn show_base_file(shared: &ToolShared, path: &str) -> String {
     // Sandbox check (prevents path escape; the file is not required to exist in
@@ -481,6 +614,90 @@ mod tests {
         assert!(out.contains("budget exhausted"));
         assert_eq!(s.trace().len(), 3); // over-budget calls are not recorded in the trace
         assert_eq!(s.trace()[0].name, "read_file");
+    }
+
+    #[tokio::test]
+    async fn edit_file_unique_replace() {
+        let (_d, s) = setup();
+        let out = edit_file(&s, "src/main.rs", "helper();", "helper_v2();").await;
+        assert!(out.contains("edited src/main.rs"), "{out}");
+        let content = std::fs::read_to_string(s.workspace().join("src/main.rs")).unwrap();
+        assert!(content.contains("helper_v2();"));
+    }
+
+    #[tokio::test]
+    async fn edit_file_error_paths() {
+        let (_d, s) = setup();
+        // not found
+        let out = edit_file(&s, "src/main.rs", "nonexistent_call();", "x();").await;
+        assert!(out.contains("not found"), "{out}");
+        // not unique
+        std::fs::write(s.workspace().join("dup.txt"), "a\na\nb\n").unwrap();
+        let out = edit_file(&s, "dup.txt", "a", "c").await;
+        assert!(out.contains("matches 2 locations"), "{out}");
+        // missing file
+        let out = edit_file(&s, "nope.txt", "a", "b").await;
+        assert!(out.contains("does not exist"), "{out}");
+        // empty / identical
+        assert!(
+            edit_file(&s, "dup.txt", "", "b")
+                .await
+                .contains("must not be empty")
+        );
+        assert!(
+            edit_file(&s, "dup.txt", "a", "a")
+                .await
+                .contains("identical")
+        );
+        // non-UTF-8
+        std::fs::write(s.workspace().join("bin.dat"), [0xff, 0xfe, 0x00]).unwrap();
+        assert!(
+            edit_file(&s, "bin.dat", "a", "b")
+                .await
+                .contains("not a UTF-8")
+        );
+        // sandbox
+        assert!(
+            edit_file(&s, "../evil.txt", "a", "b")
+                .await
+                .contains("escape")
+        );
+    }
+
+    #[tokio::test]
+    async fn write_file_create_overwrite_mkdir() {
+        let (_d, s) = setup();
+        // create with parent dirs
+        let out = write_file(&s, "new/deep/file.txt", "hello\n").await;
+        assert!(out.contains("wrote new/deep/file.txt"), "{out}");
+        assert_eq!(
+            std::fs::read_to_string(s.workspace().join("new/deep/file.txt")).unwrap(),
+            "hello\n"
+        );
+        // overwrite
+        let out = write_file(&s, "README.md", "# replaced\n").await;
+        assert!(out.contains("wrote README.md"), "{out}");
+        assert_eq!(
+            std::fs::read_to_string(s.workspace().join("README.md")).unwrap(),
+            "# replaced\n"
+        );
+        // sandbox
+        assert!(write_file(&s, "../evil.txt", "x").await.contains("escape"));
+        assert!(
+            write_file(&s, "/abs/path.txt", "x")
+                .await
+                .contains("absolute")
+        );
+    }
+
+    #[tokio::test]
+    async fn write_file_blocks_symlinked_parent_escape() {
+        let (_d, s) = setup();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), s.workspace().join("linkeddir")).unwrap();
+        let out = write_file(&s, "linkeddir/pwned.txt", "x").await;
+        assert!(out.contains("symlink escape"), "{out}");
+        assert!(!outside.path().join("pwned.txt").exists());
     }
 
     #[tokio::test]

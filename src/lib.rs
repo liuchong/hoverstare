@@ -3,9 +3,11 @@
 pub mod agent;
 pub mod cli;
 pub mod config;
+pub mod develop;
 pub mod diff;
 pub mod event;
 pub mod findings;
+pub mod git;
 pub mod github;
 pub mod i18n;
 pub mod instructions;

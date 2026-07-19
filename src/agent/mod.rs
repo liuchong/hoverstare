@@ -11,10 +11,20 @@ pub mod tools;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Read-only tool registry: None = pure single-turn mode without tools
+/// Which tool set the model gets (spec 11 §4).
+/// Review is ALWAYS ReadOnly; only the develop loop uses ReadWrite.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ToolProfile {
+    #[default]
+    ReadOnly,
+    ReadWrite,
+}
+
+/// Tool registry: `shared: None` = pure single-turn mode without tools
 #[derive(Debug, Clone, Default)]
 pub struct ToolRegistry {
     pub shared: Option<Arc<tools::ToolShared>>,
+    pub profile: ToolProfile,
 }
 
 #[derive(Debug)]

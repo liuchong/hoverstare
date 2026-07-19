@@ -192,6 +192,7 @@ async fn explain_with_backend(
         user_prompt: format!("[Review finding]\n{context}\n\n[User question]\n{question}"),
         tools: ToolRegistry {
             shared: Some(shared),
+            ..Default::default()
         },
         budget: Budget {
             max_tool_calls: cfg.max_tool_calls / 2,
