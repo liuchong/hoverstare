@@ -38,7 +38,7 @@ pub fn parse_command(body: &str) -> Option<MentionCommand> {
 }
 
 /// Remove ``` fenced code blocks and `inline code`
-fn strip_code_blocks(body: &str) -> String {
+pub(crate) fn strip_code_blocks(body: &str) -> String {
     let mut out = String::new();
     let mut in_fence = false;
     for line in body.lines() {

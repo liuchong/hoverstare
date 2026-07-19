@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod cli;
 pub mod config;
+pub mod devagent;
 pub mod develop;
 pub mod diff;
 pub mod event;

@@ -147,3 +147,141 @@ pub fn resolve_pr(args: &ReviewArgs) -> anyhow::Result<PrRef> {
             .context("cannot determine the target PR: --repo/--pr not provided and not running in a pull_request event environment"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Develop mode events (spec 11 §3.2)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DevKind {
+    IssueOpened,
+    IssueComment,
+    ReviewComment,
+    Review,
+}
+
+/// A develop-mode trigger: issue opened, or a comment anywhere (issue / PR
+/// conversation / review thread / review body).
+#[derive(Debug, Clone)]
+pub struct DevEvent {
+    pub repo: String,
+    pub number: u64,
+    pub is_pr: bool,
+    pub kind: DevKind,
+    /// Issue title (IssueOpened only).
+    pub title: Option<String>,
+    pub body: String,
+    pub comment_id: Option<u64>,
+    pub author_association: String,
+    pub in_reply_to: Option<u64>,
+}
+
+impl DevEvent {
+    pub fn is_collaborator(&self) -> bool {
+        matches!(
+            self.author_association.as_str(),
+            "OWNER" | "MEMBER" | "COLLABORATOR"
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DevPayload {
+    action: Option<String>,
+    issue: Option<DevIssue>,
+    pull_request: Option<EventPr>,
+    comment: Option<MentionComment>,
+    review: Option<DevReview>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevIssue {
+    number: u64,
+    title: Option<String>,
+    body: Option<String>,
+    author_association: Option<String>,
+    pull_request: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevReview {
+    body: Option<String>,
+    author_association: String,
+}
+
+/// Parse a develop-mode trigger from the GitHub Actions environment.
+pub fn resolve_dev_event() -> anyhow::Result<Option<DevEvent>> {
+    let Ok(path) = std::env::var("GITHUB_EVENT_PATH") else {
+        return Ok(None);
+    };
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read GITHUB_EVENT_PATH ({path})"))?;
+    let payload: DevPayload = serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse event payload ({path})"))?;
+    let repo = std::env::var("GITHUB_REPOSITORY").context("missing GITHUB_REPOSITORY")?;
+
+    // issue_comment.created (works for pure issues and PRs)
+    if let (Some(issue), Some(comment)) = (&payload.issue, &payload.comment) {
+        return Ok(Some(DevEvent {
+            repo,
+            number: issue.number,
+            is_pr: issue.pull_request.is_some(),
+            kind: DevKind::IssueComment,
+            title: issue.title.clone(),
+            body: comment.body.clone(),
+            comment_id: Some(comment.id),
+            author_association: comment.author_association.clone(),
+            in_reply_to: None,
+        }));
+    }
+    // issues.opened
+    if let (Some(issue), None) = (&payload.issue, &payload.comment) {
+        if payload.action.as_deref() != Some("opened") {
+            return Ok(None);
+        }
+        return Ok(Some(DevEvent {
+            repo,
+            number: issue.number,
+            is_pr: false,
+            kind: DevKind::IssueOpened,
+            title: issue.title.clone(),
+            body: issue.body.clone().unwrap_or_default(),
+            comment_id: None,
+            author_association: issue
+                .author_association
+                .clone()
+                .unwrap_or_else(|| "NONE".to_string()),
+            in_reply_to: None,
+        }));
+    }
+    // pull_request_review_comment.created / pull_request_review.submitted
+    if let Some(pr) = &payload.pull_request {
+        if let Some(comment) = &payload.comment {
+            return Ok(Some(DevEvent {
+                repo,
+                number: pr.number,
+                is_pr: true,
+                kind: DevKind::ReviewComment,
+                title: None,
+                body: comment.body.clone(),
+                comment_id: Some(comment.id),
+                author_association: comment.author_association.clone(),
+                in_reply_to: comment.in_reply_to_id,
+            }));
+        }
+        if let Some(review) = &payload.review {
+            return Ok(Some(DevEvent {
+                repo,
+                number: pr.number,
+                is_pr: true,
+                kind: DevKind::Review,
+                title: None,
+                body: review.body.clone().unwrap_or_default(),
+                comment_id: None,
+                author_association: review.author_association.clone(),
+                in_reply_to: None,
+            }));
+        }
+    }
+    Ok(None)
+}

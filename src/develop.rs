@@ -23,6 +23,8 @@ pub struct DevelopOutcome {
     /// Commit sha when a commit was created.
     pub commit: Option<String>,
     pub dry_run: bool,
+    /// The tool-call budget ran out mid-loop (self-trigger signal, spec 11 §6).
+    pub budget_exhausted: bool,
 }
 
 /// System prompt for develop mode (spec 11). Kept separate from the review
@@ -42,23 +44,40 @@ pub fn dev_system_prompt() -> String {
         .to_string()
 }
 
-/// Run one develop round locally: agent works the task in `workspace`,
+/// Parameters for one develop round.
+pub struct DevelopRequest<'a> {
+    pub workspace: &'a Path,
+    pub task: &'a str,
+    /// Human-readable subject for the commit message (usually the raw task
+    /// or instruction, not the wrapped prompt).
+    pub commit_hint: &'a str,
+    pub dry_run: bool,
+    pub backend: &'a dyn AgentBackend,
+    pub model: &'a str,
+    pub temperature: Option<f64>,
+    pub budget_calls: u32,
+}
+
+/// Run one develop round locally: agent works the task in the workspace,
 /// then changes are committed (unless `dry_run`).
-pub async fn run(
-    workspace: &Path,
-    task: &str,
-    dry_run: bool,
-    backend: &dyn AgentBackend,
-    model: &str,
-    temperature: Option<f64>,
-    budget_calls: u32,
-) -> anyhow::Result<DevelopOutcome> {
+pub async fn run(req: DevelopRequest<'_>) -> anyhow::Result<DevelopOutcome> {
+    let DevelopRequest {
+        workspace,
+        task,
+        commit_hint,
+        dry_run,
+        backend,
+        model,
+        temperature,
+        budget_calls,
+    } = req;
     let git = GitRepo::open(workspace)?;
     let base_ref = git
         .current_branch()
         .await
         .unwrap_or_else(|_| "HEAD".to_string());
     let shared = ToolShared::new(workspace.to_path_buf(), base_ref, budget_calls);
+    let call_counter = shared.clone();
     let req = ReviewRequest {
         system_prompt: dev_system_prompt(),
         user_prompt: format!(
@@ -81,11 +100,13 @@ pub async fn run(
         .map_err(|e| anyhow::anyhow!("agent failed: {e}"))?;
     let summary = run.raw_output.trim().to_string();
 
+    let exhausted = call_counter.call_count() >= budget_calls;
     if !git.has_changes().await? {
         return Ok(DevelopOutcome {
             summary: format!("{summary}\n\n(no workspace changes)"),
             commit: None,
             dry_run,
+            budget_exhausted: exhausted,
         });
     }
     if dry_run {
@@ -94,16 +115,18 @@ pub async fn run(
             summary: format!("{summary}\n\n[dry-run] would commit:\n{status}"),
             commit: None,
             dry_run: true,
+            budget_exhausted: exhausted,
         });
     }
     git.add_all().await?;
     let sha = git
-        .commit(&commit_message(task), AUTHOR_NAME, AUTHOR_EMAIL)
+        .commit(&commit_message(commit_hint), AUTHOR_NAME, AUTHOR_EMAIL)
         .await?;
     Ok(DevelopOutcome {
         summary,
         commit: sha,
         dry_run,
+        budget_exhausted: exhausted,
     })
 }
 
@@ -174,15 +197,16 @@ mod tests {
     #[tokio::test]
     async fn develop_commits_agent_changes() {
         let (_d, repo) = fixture_repo().await;
-        let out = run(
-            repo.root(),
-            "create hello.txt with a greeting",
-            false,
-            &WriteBackend,
-            "test-model",
-            None,
-            10,
-        )
+        let out = run(DevelopRequest {
+            workspace: repo.root(),
+            task: "create hello.txt with a greeting",
+            commit_hint: "create hello.txt with a greeting",
+            dry_run: false,
+            backend: &WriteBackend,
+            model: "test-model",
+            temperature: None,
+            budget_calls: 10,
+        })
         .await
         .unwrap();
         assert!(out.commit.is_some());
@@ -198,15 +222,16 @@ mod tests {
     #[tokio::test]
     async fn dry_run_does_not_commit() {
         let (_d, repo) = fixture_repo().await;
-        let out = run(
-            repo.root(),
-            "create hello.txt",
-            true,
-            &WriteBackend,
-            "m",
-            None,
-            10,
-        )
+        let out = run(DevelopRequest {
+            workspace: repo.root(),
+            task: "create hello.txt",
+            commit_hint: "create hello.txt",
+            dry_run: true,
+            backend: &WriteBackend,
+            model: "m",
+            temperature: None,
+            budget_calls: 10,
+        })
         .await
         .unwrap();
         assert!(out.commit.is_none());

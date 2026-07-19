@@ -55,6 +55,12 @@ pub struct PullRequest {
     #[serde(default)]
     pub draft: bool,
     pub user: PrUser,
+    /// "open" | "closed" (develop mode, spec 11)
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Mergeability flag; GitHub computes it lazily (may be null)
+    #[serde(default)]
+    pub mergeable: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +68,14 @@ pub struct PrRef {
     pub sha: String,
     #[serde(rename = "ref")]
     pub ref_name: String,
+    /// Present on PR head/base objects; used for the same-repo check (spec 11 §2)
+    #[serde(default)]
+    pub repo: Option<PrRepo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PrRepo {
+    pub full_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -609,5 +623,152 @@ impl GitHubClient {
         self.graphql(MUTATION, serde_json::json!({ "threadId": thread_id }))
             .await?;
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Develop mode API (spec 11)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Deserialize)]
+pub struct Issue {
+    pub number: u64,
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct IssueComment {
+    pub id: u64,
+    #[serde(default)]
+    pub body: Option<String>,
+    pub user: PrUser,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CreatedPr {
+    pub number: u64,
+    pub html_url: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CheckRun {
+    pub name: String,
+    pub status: String,
+    #[serde(default)]
+    pub conclusion: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct RepoMeta {
+    pub default_branch: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct CheckRunsPage {
+    check_runs: Vec<CheckRun>,
+}
+
+impl GitHubClient {
+    pub async fn get_issue(&self, repo: &Repo, number: u64) -> Result<Issue, GitHubError> {
+        let url = format!(
+            "{}/repos/{}/{}/issues/{number}",
+            self.api, repo.owner, repo.name
+        );
+        let resp = self
+            .send(|| self.request(reqwest::Method::GET, &url))
+            .await?;
+        Ok(Self::error_for_status(resp).await?.json().await?)
+    }
+
+    /// All issue comments (paginated, chronological).
+    pub async fn list_issue_comments(
+        &self,
+        repo: &Repo,
+        number: u64,
+    ) -> Result<Vec<IssueComment>, GitHubError> {
+        let mut out = Vec::new();
+        let mut page = 1u32;
+        loop {
+            let url = format!(
+                "{}/repos/{}/{}/issues/{number}/comments?per_page=100&page={page}",
+                self.api, repo.owner, repo.name
+            );
+            let resp = self
+                .send(|| self.request(reqwest::Method::GET, &url))
+                .await?;
+            let batch: Vec<IssueComment> = Self::error_for_status(resp).await?.json().await?;
+            let done = batch.len() < 100;
+            out.extend(batch);
+            if done {
+                return Ok(out);
+            }
+            page += 1;
+        }
+    }
+
+    pub async fn create_pull_request(
+        &self,
+        repo: &Repo,
+        title: &str,
+        head: &str,
+        base: &str,
+        body: &str,
+    ) -> Result<CreatedPr, GitHubError> {
+        let url = format!("{}/repos/{}/{}/pulls", self.api, repo.owner, repo.name);
+        let payload = serde_json::json!({
+            "title": title, "head": head, "base": base, "body": body,
+        });
+        let resp = self
+            .send(|| self.request(reqwest::Method::POST, &url).json(&payload))
+            .await?;
+        Ok(Self::error_for_status(resp).await?.json().await?)
+    }
+
+    /// Squash-merge a PR; returns the merge commit sha.
+    pub async fn merge_pull_request(
+        &self,
+        repo: &Repo,
+        number: u64,
+    ) -> Result<String, GitHubError> {
+        let url = format!(
+            "{}/repos/{}/{}/pulls/{number}/merge",
+            self.api, repo.owner, repo.name
+        );
+        let payload = serde_json::json!({ "merge_method": "squash" });
+        let resp = self
+            .send(|| self.request(reqwest::Method::PUT, &url).json(&payload))
+            .await?;
+        #[derive(serde::Deserialize)]
+        struct MergeResult {
+            sha: String,
+        }
+        let r: MergeResult = Self::error_for_status(resp).await?.json().await?;
+        Ok(r.sha)
+    }
+
+    pub async fn list_check_runs(
+        &self,
+        repo: &Repo,
+        sha: &str,
+    ) -> Result<Vec<CheckRun>, GitHubError> {
+        let url = format!(
+            "{}/repos/{}/{}/commits/{sha}/check-runs?per_page=100",
+            self.api, repo.owner, repo.name
+        );
+        let resp = self
+            .send(|| self.request(reqwest::Method::GET, &url))
+            .await?;
+        let page: CheckRunsPage = Self::error_for_status(resp).await?.json().await?;
+        Ok(page.check_runs)
+    }
+
+    pub async fn get_repo_meta(&self, repo: &Repo) -> Result<RepoMeta, GitHubError> {
+        let url = format!("{}/repos/{}/{}", self.api, repo.owner, repo.name);
+        let resp = self
+            .send(|| self.request(reqwest::Method::GET, &url))
+            .await?;
+        Ok(Self::error_for_status(resp).await?.json().await?)
     }
 }

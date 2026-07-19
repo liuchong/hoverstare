@@ -1,4 +1,5 @@
-# 本仓库自举（dogfood）：用 hoverstare 审查 hoverstare 自己的 PR。
+# 本仓库自举（dogfood）：用 hoverstare 审查 hoverstare 自己的 PR，
+# 并运行 spec 11 的开发模式（issue 讨论/计划、PR 分支开发、合并命令）。
 # 与用户侧接法的区别：这里从源码构建二进制（避免鸡生蛋问题），
 # 用户应使用 action.yml（下载预编译二进制，见 README）。
 name: HoverStare (dogfood)
@@ -6,13 +7,18 @@ name: HoverStare (dogfood)
 on:
   pull_request:
     types: [opened, reopened, synchronize]
+  issues:
+    types: [opened]
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
-  contents: read
+  contents: write
+  issues: write
   pull-requests: write
   statuses: write
 
@@ -32,6 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'pull_request' && !github.event.pull_request.draft) ||
+      (github.event_name == 'issues' && contains(github.event.issue.body, '@hoverstare')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@hoverstare')) ||
       contains(github.event.comment.body, '@hoverstare')
     steps:
       - uses: actions/checkout@v4
@@ -45,16 +53,42 @@ jobs:
       - name: Build
         run: cargo build --release
 
+      # 品牌身份：评论/推送用 hoverstare[bot]（App token 可触发 CI）
+      - name: Create App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.HOVERSTARE_APP_ID }}
+          private-key: ${{ secrets.HOVERSTARE_APP_PRIVATE_KEY }}
+
+      # 路由（spec 09/11）：pull_request -> review；纯 issue -> develop；
+      # PR 评论 review|explain|help|空 -> mention；其余 -> develop
       - name: Run hoverstare
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_PAT: ${{ secrets.GH_PAT }}
           OPENAI_API_KEY: ${{ secrets.HOVERSTARE_LLM_KEY }}
           OPENAI_BASE_URL: ${{ vars.HOVERSTARE_LLM_BASE_URL }}
         run: |
           set -euo pipefail
+          bin=./target/release/hoverstare
+          cmd="review"
           case "${{ github.event_name }}" in
-            issue_comment|pull_request_review_comment)
-              ./target/release/hoverstare mention ;;
+            issues)
+              cmd="develop" ;;
+            issue_comment)
+              if jq -e '.issue.pull_request == null' "$GITHUB_EVENT_PATH" >/dev/null; then
+                cmd="develop"
+              else
+                word=$(jq -r '.comment.body // ""' "$GITHUB_EVENT_PATH" \
+                  | grep -oE '@hoverstare[[:space:]]+[A-Za-z]+' | head -1 | awk '{print tolower($2)}')
+                case "$word" in review|explain|help|"") cmd="mention" ;; *) cmd="develop" ;; esac
+              fi ;;
+            pull_request_review_comment|pull_request_review)
+              word=$(jq -r '.comment.body // .review.body // ""' "$GITHUB_EVENT_PATH" \
+                | grep -oE '@hoverstare[[:space:]]+[A-Za-z]+' | head -1 | awk '{print tolower($2)}')
+              case "$word" in review|explain) cmd="mention" ;; *) cmd="develop" ;; esac ;;
             *)
-              ./target/release/hoverstare review ;;
+              cmd="review" ;;
           esac
+          "$bin" "$cmd"

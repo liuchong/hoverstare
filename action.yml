@@ -19,6 +19,10 @@ inputs:
     description: "可选：HoverStare GitHub App 的 private key（与 app_id 配套）"
     required: false
     default: ""
+  gh_pat:
+    description: "可选：classic PAT（repo scope），开发模式的 git push 用它（PAT 推送可触发 CI；App 未开 contents:write 权限前的替代）"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -71,15 +75,36 @@ runs:
         app-id: ${{ inputs.app_id }}
         private-key: ${{ inputs.app_private_key }}
 
+    # Route events (spec 09 review/mention, spec 11 develop):
+    #   pull_request                    -> review
+    #   issues.opened / pure-issue comments with @hoverstare -> develop
+    #   PR comments: review|explain|help|bare -> mention; anything else -> develop
+    #   pull_request_review(_comment)   -> develop (task) unless mention command
     - name: Run hoverstare
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.app_id != '' && steps.app-token.outputs.token || github.token }}
+        GH_PAT: ${{ inputs.gh_pat }}
       run: |
         set -euo pipefail
+        bin="${{ runner.temp }}/hoverstare-bin/hoverstare"
+        cmd="review"
         case "${{ github.event_name }}" in
-          issue_comment|pull_request_review_comment)
-            "${{ runner.temp }}/hoverstare-bin/hoverstare" mention ;;
+          issues)
+            cmd="develop" ;;
+          issue_comment)
+            if jq -e '.issue.pull_request == null' "$GITHUB_EVENT_PATH" >/dev/null; then
+              cmd="develop"
+            else
+              word=$(jq -r '.comment.body // ""' "$GITHUB_EVENT_PATH" \
+                | grep -oE '@hoverstare[[:space:]]+[A-Za-z]+' | head -1 | awk '{print tolower($2)}')
+              case "$word" in review|explain|help|"") cmd="mention" ;; *) cmd="develop" ;; esac
+            fi ;;
+          pull_request_review_comment|pull_request_review)
+            word=$(jq -r '.comment.body // .review.body // ""' "$GITHUB_EVENT_PATH" \
+              | grep -oE '@hoverstare[[:space:]]+[A-Za-z]+' | head -1 | awk '{print tolower($2)}')
+            case "$word" in review|explain) cmd="mention" ;; *) cmd="develop" ;; esac ;;
           *)
-            "${{ runner.temp }}/hoverstare-bin/hoverstare" review ;;
+            cmd="review" ;;
         esac
+        "$bin" "$cmd"

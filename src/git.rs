@@ -48,8 +48,29 @@ impl GitRepo {
             Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
         } else {
             let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            Err(GitError::Other(format!("{}: {stderr}", args.join(" "))))
+            Err(GitError::Other(format!(
+                "{}: {stderr}",
+                scrub_tokens(&args.join(" "))
+            )))
         }
+    }
+
+    /// `git remote add <name> <url>` (idempotent: removes first).
+    /// Note: the URL may embed a token; it lives only in .git/config (same
+    /// exposure as actions/checkout's persist-credentials), never in logs.
+    pub async fn set_remote(&self, name: &str, url: &str) -> Result<(), GitError> {
+        let _ = self.run(&["remote", "remove", name]).await;
+        self.run(&["remote", "add", name, url]).await.map(|_| ())?;
+        Ok(())
+    }
+
+    /// Force the local branch to exactly match `from` (a fetched ref):
+    /// `git checkout -B <branch> <from>`. Human commits are already on the
+    /// remote we fetched from, so nothing is ever overwritten (spec 11 §6).
+    pub async fn checkout_reset(&self, branch: &str, from: &str) -> Result<(), GitError> {
+        self.run(&["checkout", "-B", branch, from])
+            .await
+            .map(|_| ())
     }
 
     pub async fn current_branch(&self) -> Result<String, GitError> {
@@ -140,6 +161,19 @@ impl GitRepo {
         self.run(&["push", remote, &format!("HEAD:{branch}")])
             .await
             .map(|_| ())
+    }
+
+    /// `git fetch <remote> <refspec>`.
+    pub async fn fetch(&self, remote: &str, refspec: &str) -> Result<(), GitError> {
+        self.run(&["fetch", remote, refspec]).await.map(|_| ())
+    }
+}
+
+/// Never leak tokens embedded in remote URLs into error messages.
+fn scrub_tokens(s: &str) -> String {
+    match regex::Regex::new(r"x-access-token:[^@\s]+@") {
+        Ok(re) => re.replace_all(s, "x-access-token:***@").to_string(),
+        Err(_) => s.to_string(),
     }
 }
 

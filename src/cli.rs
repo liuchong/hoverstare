@@ -3,7 +3,7 @@
 use clap::{Args, Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
-use crate::{config, develop, mention, orchestrator};
+use crate::{config, devagent, develop, event, mention, orchestrator};
 
 #[derive(Parser)]
 #[command(name = "hoverstare", version, about = "Repo-aware AI code review bot")]
@@ -30,13 +30,37 @@ pub enum Command {
 
 #[derive(Args)]
 pub struct DevelopArgs {
-    /// The development task in natural language
+    /// Local mode: the development task in natural language (no GitHub events)
     #[arg(long)]
-    pub task: String,
+    pub task: Option<String>,
 
-    /// Do not commit; print what would change instead
+    /// Local mode: do not commit; print what would change instead
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Local mode: target repo (owner/name) for issue/PR flows
+    #[arg(long)]
+    pub repo: Option<String>,
+
+    /// Local mode: run the issue flow for this issue number
+    #[arg(long)]
+    pub issue: Option<u64>,
+
+    /// Local mode: run the PR flow for this PR number
+    #[arg(long)]
+    pub pr: Option<u64>,
+
+    /// Local mode: instruction text (issue discuss / PR dev round)
+    #[arg(long)]
+    pub instruction: Option<String>,
+
+    /// Local mode: implement the agreed plan (issue flow)
+    #[arg(long)]
+    pub go: bool,
+
+    /// Local mode: merge the PR (PR flow)
+    #[arg(long)]
+    pub merge: bool,
 }
 
 #[derive(Args)]
@@ -126,24 +150,52 @@ async fn run_develop(args: DevelopArgs) -> i32 {
         Ok(c) => c,
         Err(code) => return code,
     };
-    let backend = crate::agent::rig_backend::RigBackend::new(cfg.llm.clone());
-    let budget = cfg.max_tool_calls.max(develop::DEFAULT_BUDGET_CALLS);
-    match develop::run(
-        &cfg.workspace,
-        &args.task,
-        args.dry_run,
-        &backend,
-        &cfg.model,
-        cfg.temp(0.0),
-        budget,
-    )
-    .await
-    {
-        Ok(outcome) => {
-            println!("{}", outcome.summary);
-            if let Some(sha) = outcome.commit {
-                tracing::info!("✅ committed: {}", &sha[..sha.len().min(10)]);
+    // M11 local mode: run a task in the current workspace, no GitHub events.
+    if let Some(task) = args.task {
+        let backend = crate::agent::rig_backend::RigBackend::new(cfg.llm.clone());
+        let budget = cfg.max_tool_calls.max(develop::DEFAULT_BUDGET_CALLS);
+        return match develop::run(develop::DevelopRequest {
+            workspace: &cfg.workspace,
+            task: &task,
+            commit_hint: &task,
+            dry_run: args.dry_run,
+            backend: &backend,
+            model: &cfg.model,
+            temperature: cfg.temp(0.0),
+            budget_calls: budget,
+        })
+        .await
+        {
+            Ok(outcome) => {
+                println!("{}", outcome.summary);
+                if let Some(sha) = outcome.commit {
+                    tracing::info!("✅ committed: {}", &sha[..sha.len().min(10)]);
+                }
+                0
             }
+            Err(e) => {
+                tracing::error!("develop failed: {e:#}");
+                1
+            }
+        };
+    }
+    // Event/local-flag mode: issue & PR flows (spec 11)
+    let ev = match resolve_dev_event(&args) {
+        Ok(Some(ev)) => ev,
+        Ok(None) => {
+            tracing::info!(
+                "develop: no trigger (not a dev event; pass --task/--issue/--pr for local mode)"
+            );
+            return 0;
+        }
+        Err(e) => {
+            tracing::error!("develop: bad event: {e:#}");
+            return 1;
+        }
+    };
+    match devagent::run_event(&cfg, &ev).await {
+        Ok(msg) => {
+            tracing::info!("develop: {msg}");
             0
         }
         Err(e) => {
@@ -151,6 +203,64 @@ async fn run_develop(args: DevelopArgs) -> i32 {
             1
         }
     }
+}
+
+/// Build the dev trigger from CLI flags, or fall back to GITHUB_EVENT_PATH.
+fn resolve_dev_event(args: &DevelopArgs) -> anyhow::Result<Option<event::DevEvent>> {
+    let owner_flag = || "OWNER".to_string();
+    if let Some(n) = args.issue {
+        let repo = args
+            .repo
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("--issue requires --repo owner/name"))?;
+        let body = if args.go {
+            "@hoverstare go".to_string()
+        } else {
+            format!(
+                "@hoverstare {}",
+                args.instruction.clone().unwrap_or_default()
+            )
+        };
+        return Ok(Some(event::DevEvent {
+            repo,
+            number: n,
+            is_pr: false,
+            kind: event::DevKind::IssueComment,
+            title: None,
+            body,
+            comment_id: None,
+            author_association: owner_flag(),
+            in_reply_to: None,
+        }));
+    }
+    if let Some(n) = args.pr {
+        let repo = args
+            .repo
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("--pr requires --repo owner/name"))?;
+        let body = if args.merge {
+            "@hoverstare merge".to_string()
+        } else {
+            format!(
+                "@hoverstare {}",
+                args.instruction
+                    .clone()
+                    .unwrap_or_else(|| "continue".to_string())
+            )
+        };
+        return Ok(Some(event::DevEvent {
+            repo,
+            number: n,
+            is_pr: true,
+            kind: event::DevKind::IssueComment,
+            title: None,
+            body,
+            comment_id: None,
+            author_association: owner_flag(),
+            in_reply_to: None,
+        }));
+    }
+    event::resolve_dev_event()
 }
 
 async fn run_serve(args: ServeArgs) -> i32 {
