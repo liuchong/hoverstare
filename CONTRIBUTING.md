@@ -61,6 +61,26 @@ For details on bot commands, see the [`@hoverstare` commands](README.md#hoversta
 - [`specs/README.md`](specs/README.md) — design specs and milestone plan.
 - [`README.md`](README.md) — quick start, local dry-run examples, and the `@hoverstare` command table.
 
+## Local develop loop
+
+For rapid iteration on prompts, tools, or the review pipeline, use the `develop` subcommand locally. It runs a single task against your working tree without publishing anything to GitHub.
+
+```bash
+cargo run -- develop --task "<task-description>"
+```
+
+For example:
+
+```bash
+cargo run -- develop --task "review src/cli.rs for argument parsing issues"
+```
+
+- `--task` describes the goal for the agent; the pipeline runs the same backend and tools used in production.
+- No comments, reviews, or status checks are posted to GitHub.
+- Combine with `--verbose` for debug-level logging.
+
+This is the fastest way to verify changes before pushing a branch.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [1PL — One Public License](https://license.pub/1pl/).
