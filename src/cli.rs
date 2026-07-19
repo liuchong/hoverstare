@@ -231,6 +231,7 @@ fn resolve_dev_event(args: &DevelopArgs) -> anyhow::Result<Option<event::DevEven
             comment_id: None,
             author_association: owner_flag(),
             in_reply_to: None,
+            author: "local".into(),
         }));
     }
     if let Some(n) = args.pr {
@@ -258,6 +259,7 @@ fn resolve_dev_event(args: &DevelopArgs) -> anyhow::Result<Option<event::DevEven
             comment_id: None,
             author_association: owner_flag(),
             in_reply_to: None,
+            author: "local".into(),
         }));
     }
     event::resolve_dev_event()

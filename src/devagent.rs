@@ -106,7 +106,7 @@ pub fn slug(title: &str) -> String {
 
 /// Entry point for develop-mode events (spec 11 §3).
 pub async fn run_event(cfg: &Config, ev: &DevEvent) -> anyhow::Result<String> {
-    if !ev.is_collaborator() {
+    if !ev.is_collaborator() && !ev.is_self_trigger() {
         return Ok(format!(
             "ignored: author association {} is not a collaborator",
             ev.author_association

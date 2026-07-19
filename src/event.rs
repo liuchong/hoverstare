@@ -60,6 +60,14 @@ struct MentionComment {
     body: String,
     author_association: String,
     in_reply_to_id: Option<u64>,
+    /// Comment author login (develop-mode self-trigger gate, spec 11 §6)
+    #[serde(default)]
+    user: Option<EventUser>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventUser {
+    login: String,
 }
 
 /// Parse a mention event from the GitHub Actions environment (issue_comment / pull_request_review_comment)
@@ -174,6 +182,8 @@ pub struct DevEvent {
     pub comment_id: Option<u64>,
     pub author_association: String,
     pub in_reply_to: Option<u64>,
+    /// Author login of the triggering comment/issue/review.
+    pub author: String,
 }
 
 impl DevEvent {
@@ -182,6 +192,13 @@ impl DevEvent {
             self.author_association.as_str(),
             "OWNER" | "MEMBER" | "COLLABORATOR"
         )
+    }
+
+    /// Self-trigger gate (spec 11 §6): the bot's own `@hoverstare continue`
+    /// is allowed even though the bot is not a collaborator; everything else
+    /// from non-collaborators is ignored.
+    pub fn is_self_trigger(&self) -> bool {
+        self.author == "hoverstare[bot]" && self.body.trim() == "@hoverstare continue"
     }
 }
 
@@ -201,12 +218,16 @@ struct DevIssue {
     body: Option<String>,
     author_association: Option<String>,
     pull_request: Option<serde_json::Value>,
+    #[serde(default)]
+    user: Option<EventUser>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DevReview {
     body: Option<String>,
     author_association: String,
+    #[serde(default)]
+    user: Option<EventUser>,
 }
 
 /// Parse a develop-mode trigger from the GitHub Actions environment.
@@ -232,6 +253,11 @@ pub fn resolve_dev_event() -> anyhow::Result<Option<DevEvent>> {
             comment_id: Some(comment.id),
             author_association: comment.author_association.clone(),
             in_reply_to: None,
+            author: comment
+                .user
+                .as_ref()
+                .map(|u| u.login.clone())
+                .unwrap_or_default(),
         }));
     }
     // issues.opened
@@ -252,6 +278,11 @@ pub fn resolve_dev_event() -> anyhow::Result<Option<DevEvent>> {
                 .clone()
                 .unwrap_or_else(|| "NONE".to_string()),
             in_reply_to: None,
+            author: issue
+                .user
+                .as_ref()
+                .map(|u| u.login.clone())
+                .unwrap_or_default(),
         }));
     }
     // pull_request_review_comment.created / pull_request_review.submitted
@@ -267,6 +298,11 @@ pub fn resolve_dev_event() -> anyhow::Result<Option<DevEvent>> {
                 comment_id: Some(comment.id),
                 author_association: comment.author_association.clone(),
                 in_reply_to: comment.in_reply_to_id,
+                author: comment
+                    .user
+                    .as_ref()
+                    .map(|u| u.login.clone())
+                    .unwrap_or_default(),
             }));
         }
         if let Some(review) = &payload.review {
@@ -280,6 +316,11 @@ pub fn resolve_dev_event() -> anyhow::Result<Option<DevEvent>> {
                 comment_id: None,
                 author_association: review.author_association.clone(),
                 in_reply_to: None,
+                author: review
+                    .user
+                    .as_ref()
+                    .map(|u| u.login.clone())
+                    .unwrap_or_default(),
             }));
         }
     }
