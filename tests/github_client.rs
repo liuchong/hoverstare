@@ -548,8 +548,7 @@ async fn merge_permission_denied_reacts_and_skips() {
             when.method(POST)
                 .path("/repos/o/r/issues/1/comments")
                 .body_includes("Permission denied");
-            then.status(200)
-                .json_body(serde_json::json!({"id": 99}));
+            then.status(200).json_body(serde_json::json!({"id": 99}));
         })
         .await;
     let reaction_mock = server
@@ -557,8 +556,7 @@ async fn merge_permission_denied_reacts_and_skips() {
             when.method(POST)
                 .path("/repos/o/r/issues/comments/11/reactions")
                 .body_includes(r#""content":"eyes""#);
-            then.status(200)
-                .json_body(serde_json::json!({"id": 100}));
+            then.status(200).json_body(serde_json::json!({"id": 100}));
         })
         .await;
 
@@ -613,7 +611,10 @@ async fn get_collaborator_permission_parses_levels() {
             .await;
 
         let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
-        let got = gh.get_collaborator_permission(&repo(), "dev").await.unwrap();
+        let got = gh
+            .get_collaborator_permission(&repo(), "dev")
+            .await
+            .unwrap();
         assert_eq!(got, expected, "unexpected level for {name}");
     }
 }
@@ -643,12 +644,16 @@ async fn permission_level_greater_or_equal() {
         author_association: "NONE",
     };
 
-    assert!(evaluator
-        .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
-        .await);
-    assert!(evaluator
-        .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
-        .await);
+    assert!(
+        evaluator
+            .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
+            .await
+    );
+    assert!(
+        evaluator
+            .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
+            .await
+    );
 }
 
 /// 协作者权限等级不足时应拒绝。
@@ -675,9 +680,11 @@ async fn permission_level_too_low_is_denied() {
         author_association: "COLLABORATOR",
     };
 
-    assert!(!evaluator
-        .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
-        .await);
+    assert!(
+        !evaluator
+            .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
+            .await
+    );
 }
 
 /// 同一用户跨多个命令键时，协作者权限 API 只调用一次（spec 12 §5 缓存）。
@@ -705,12 +712,16 @@ async fn permission_level_cache_per_user() {
         author_association: "NONE",
     };
 
-    assert!(evaluator
-        .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
-        .await);
-    assert!(evaluator
-        .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
-        .await);
+    assert!(
+        evaluator
+            .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
+            .await
+    );
+    assert!(
+        evaluator
+            .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
+            .await
+    );
     m.assert_calls_async(1).await;
 }
 
@@ -720,8 +731,7 @@ async fn team_membership_hit() {
     let server = MockServer::start_async().await;
     server
         .mock_async(|when, then| {
-            when.method(GET)
-                .path("/orgs/o/teams/t/memberships/dev");
+            when.method(GET).path("/orgs/o/teams/t/memberships/dev");
             then.status(200)
                 .json_body(serde_json::json!({"state": "active"}));
         })
@@ -738,9 +748,11 @@ async fn team_membership_hit() {
         author_association: "NONE",
     };
 
-    assert!(evaluator
-        .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
-        .await);
+    assert!(
+        evaluator
+            .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
+            .await
+    );
 }
 
 /// @org/team 未命中：404 视为非成员（个人仓库或团队不存在）。
@@ -749,8 +761,7 @@ async fn team_membership_miss() {
     let server = MockServer::start_async().await;
     server
         .mock_async(|when, then| {
-            when.method(GET)
-                .path("/orgs/o/teams/t/memberships/dev");
+            when.method(GET).path("/orgs/o/teams/t/memberships/dev");
             then.status(404);
         })
         .await;
@@ -766,7 +777,9 @@ async fn team_membership_miss() {
         author_association: "OWNER",
     };
 
-    assert!(!evaluator
-        .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
-        .await);
+    assert!(
+        !evaluator
+            .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
+            .await
+    );
 }

@@ -160,13 +160,7 @@ fn default_merge() -> Vec<String> {
     vec!["write".to_string()]
 }
 
-const VALID_ASSOCIATIONS: &[&str] = &[
-    "anyone",
-    "contributor",
-    "collaborator",
-    "member",
-    "owner",
-];
+const VALID_ASSOCIATIONS: &[&str] = &["anyone", "contributor", "collaborator", "member", "owner"];
 const VALID_PERMISSION_LEVELS: &[&str] = &["read", "triage", "write", "maintain", "admin"];
 
 impl Permissions {
@@ -299,10 +293,13 @@ impl PermissionsEvaluator {
         match e.as_str() {
             "anyone" => true,
             "contributor" => actor_association_matches(actor.author_association, "CONTRIBUTOR"),
-            "collaborator" => {
-                actor_association_matches_one_of(actor.author_association, &["OWNER", "MEMBER", "COLLABORATOR"])
+            "collaborator" => actor_association_matches_one_of(
+                actor.author_association,
+                &["OWNER", "MEMBER", "COLLABORATOR"],
+            ),
+            "member" => {
+                actor_association_matches_one_of(actor.author_association, &["OWNER", "MEMBER"])
             }
-            "member" => actor_association_matches_one_of(actor.author_association, &["OWNER", "MEMBER"]),
             "owner" => actor_association_matches(actor.author_association, "OWNER"),
             _ if e.starts_with('@') => {
                 let rest = &e[1..];
@@ -313,7 +310,8 @@ impl PermissionsEvaluator {
                     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
                         return false;
                     }
-                    gh.check_team_membership(parts[0], parts[1], actor.login).await
+                    gh.check_team_membership(parts[0], parts[1], actor.login)
+                        .await
                 }
             }
             _ => false,

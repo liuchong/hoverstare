@@ -100,7 +100,9 @@ pub async fn run_mention_event(cfg: &Config, ev: &MentionEvent) -> anyhow::Resul
             .await
         {
             let t = T::new(cfg.language);
-            let _ = gh.create_issue_comment(&repo, ev.pr_number, t.permission_denied()).await;
+            let _ = gh
+                .create_issue_comment(&repo, ev.pr_number, t.permission_denied())
+                .await;
             let _ = gh.create_reaction(&repo, ev, "eyes").await;
             return Ok(Outcome::Skipped(format!(
                 "comment author {} does not have permission for review command",

@@ -577,14 +577,8 @@ impl GitHubClient {
     /// Check whether a user is an active member of an org team (spec 12).
     /// Treats any API error (including non-org repos) as "not a member".
     pub async fn check_team_membership(&self, org: &str, team: &str, login: &str) -> bool {
-        let url = format!(
-            "{}/orgs/{org}/teams/{team}/memberships/{login}",
-            self.api
-        );
-        let Ok(resp) = self
-            .send(|| self.request(reqwest::Method::GET, &url))
-            .await
-        else {
+        let url = format!("{}/orgs/{org}/teams/{team}/memberships/{login}", self.api);
+        let Ok(resp) = self.send(|| self.request(reqwest::Method::GET, &url)).await else {
             return false;
         };
         if resp.status().as_u16() == 404 {

@@ -140,9 +140,13 @@ pub async fn run_event(cfg: &Config, ev: &DevEvent) -> anyhow::Result<String> {
         };
         if !evaluator.evaluate(key, &gh, &repo, actor).await {
             let t = T::new(cfg.language);
-            let _ = gh.create_issue_comment(&repo, ev.number, t.permission_denied()).await;
+            let _ = gh
+                .create_issue_comment(&repo, ev.number, t.permission_denied())
+                .await;
             if let Some(cid) = ev.comment_id {
-                let _ = gh.create_reaction_for_comment(&repo, cid, ev.in_reply_to, "eyes").await;
+                let _ = gh
+                    .create_reaction_for_comment(&repo, cid, ev.in_reply_to, "eyes")
+                    .await;
             }
             return Ok(format!(
                 "permission denied: author {} does not meet {:?} requirements",
