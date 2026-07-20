@@ -26,6 +26,7 @@ agentic 审查，把高置信度缺陷以行内评论发到 PR 上并跨 commit 
 | [09-mention-commands.md](09-mention-commands.md) | `@hoverstare` 评论命令 | M6 |
 | [10-serve-mode.md](10-serve-mode.md) | 可选自部署 webhook 服务（零配置 hoverstare[bot]） | M8 ✅ |
 | [11-agent-dev.md](11-agent-dev.md) | Agent 开发模式：issue 驱动 + PR 循环开发（写工具、推分支、自触发、合并命令） | M11-M13 |
+| [12-permissions.md](12-permissions.md) | 细粒度权限系统：`.github/hoverstare.toml` 声明谁可用哪条命令 | M14 |
 | [validation-2026-07-18.md](validation-2026-07-18.md) | 真实环境端到端验证记录 | — |
 
 ## 里程碑计划

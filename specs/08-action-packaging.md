@@ -62,6 +62,10 @@ inputs：
   注意：create-github-app-token 会替换后续步骤的 `github.token` 上下文，
   因此 cache 步骤显式固定 `GITHUB_TOKEN: ${{ github.token }}`（App token 无
   cache 写权限，否则 post-cache 报 warning——实测踩坑）。
+- `gh_pat`（可选）：dev-mode 写令牌（classic PAT，`repo` scope）。`develop` 循环
+  的 git push / merge 优先使用 `GH_PAT`：PAT 推送可触发 CI，而 `GITHUB_TOKEN`
+  推送不触发。API 身份（评论、状态检查等）仍使用 App / `GITHUB_TOKEN`，
+  不因 `gh_pat` 改变 bot 身份。
 
 步骤：
 
@@ -69,8 +73,14 @@ inputs：
 2. 命中 `actions/cache`（key = `hoverstare-{version}-{os}-{arch}`）则跳过下载；
 3. 否则从 GitHub Releases 下载 `hoverstare-{version}-{target}.tar.gz` 与 `.sha256`，
    校验后解压到 `$RUNNER_TEMP/hoverstare/bin`；
-4. 事件分派：`pull_request` → `hoverstare review`；`issue_comment` → `hoverstare mention`；
-5. 透传 `GITHUB_TOKEN`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`。
+4. 事件分派：
+   - `pull_request` → `hoverstare review`；
+   - `issue_comment` / `pull_request_review_comment` / `issues` 事件 → 先提取
+     `@hoverstare` 后的命令关键字；若匹配 `review|explain|help|empty` 则
+     `hoverstare mention`，否则 `hoverstare develop`；
+   - 路由实现需容忍 CJK 文本下 `grep` 未匹配的情况，避免崩溃或错路由；
+5. 透传 `GITHUB_TOKEN`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`；
+   若提供 `gh_pat`，作为 `GH_PAT` 透传给 `develop` 子命令。
 
 ## 发布流水线（`.github/workflows/release.yml`，本仓库自身）
 

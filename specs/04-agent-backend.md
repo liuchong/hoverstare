@@ -88,6 +88,19 @@ pub struct ToolCallRecord { pub name: String, pub args_summary: String,
 - 工具错误（文件不存在、无权限等）以普通文本返回给模型，不中断循环；
 - 每次工具调用记入 `tool_trace`。
 
+## ToolProfile
+
+工具注册表按场景携带不同的能力画像，不依赖 prompt 约束：
+
+| Profile | 可用工具 | 使用场景 |
+|---|---|---|
+| `ReadOnly` | `read_file` / `grep` / `glob` / `show_base_file` | 审查场景（`review`、`mention` 的 review/explain/help） |
+| `ReadWrite` | 只读工具集 + `edit_file` / `write_file` | 开发模式（`develop`） |
+
+`review` 与 `mention` 永远使用 `ReadOnly`；只有 `develop` 循环才会挂载
+`edit_file`/`write_file`。工具实现层共享路径沙箱，写工具额外在编辑前
+校验 `old_string` 唯一性（spec 11）。
+
 ## RigBackend（v1 实现）
 
 - 依赖 `rig-core`，`Cargo.lock` 锁版本；provider 按 `config.llm` 选 Anthropic 或
