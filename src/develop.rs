@@ -76,31 +76,31 @@ pub async fn run(req: DevelopRequest<'_>) -> anyhow::Result<DevelopOutcome> {
         .current_branch()
         .await
         .unwrap_or_else(|_| "HEAD".to_string());
-    let shared = ToolShared::new(workspace.to_path_buf(), base_ref, budget_calls);
-    let call_counter = shared.clone();
-    let tools = ToolRegistry {
-        shared: Some(shared),
-        profile: ToolProfile::ReadWrite,
-    };
     let budget = Budget {
         max_tool_calls: budget_calls,
         timeout: DEFAULT_TIMEOUT,
     };
-    let make_req = |user_prompt: String| ReviewRequest {
-        system_prompt: dev_system_prompt(),
-        user_prompt,
-        tools: tools.clone(),
-        budget,
-        model: model.to_string(),
-        temperature,
-    };
     // Resilience (same spirit as the review pipeline): transient backend
     // errors and empty outputs get up to 3 attempts, later attempts with a
-    // nudge to start editing immediately.
+    // nudge to start editing immediately. Each attempt gets a FRESH tool
+    // budget (a shared counter would starve retries).
     const MAX_ATTEMPTS: u32 = 3;
     let mut run_opt = None;
     let mut last_err = None;
+    let mut last_counter = None;
     for attempt in 1..=MAX_ATTEMPTS {
+        let shared = ToolShared::new(workspace.to_path_buf(), base_ref.clone(), budget_calls);
+        let req = |user_prompt: String| ReviewRequest {
+            system_prompt: dev_system_prompt(),
+            user_prompt,
+            tools: ToolRegistry {
+                shared: Some(shared.clone()),
+                profile: ToolProfile::ReadWrite,
+            },
+            budget,
+            model: model.to_string(),
+            temperature,
+        };
         let prompt = if attempt == 1 {
             format!(
                 "# Task\n{task}\n\nImplement it now. When done, reply with a concise summary of what changed and why."
@@ -110,7 +110,8 @@ pub async fn run(req: DevelopRequest<'_>) -> anyhow::Result<DevelopOutcome> {
                 "# Task\n{task}\n\nIMPORTANT: start editing files right away with the tools. Work incrementally: small, correct edits. When done, reply with a concise summary of what changed and why."
             )
         };
-        match backend.review(make_req(prompt)).await {
+        last_counter = Some(shared.clone());
+        match backend.review(req(prompt)).await {
             Ok(run) if !run.raw_output.trim().is_empty() => {
                 run_opt = Some(run);
                 break;
@@ -139,7 +140,10 @@ pub async fn run(req: DevelopRequest<'_>) -> anyhow::Result<DevelopOutcome> {
     };
     let summary = run.raw_output.trim().to_string();
 
-    let exhausted = call_counter.call_count() >= budget_calls;
+    let exhausted = last_counter
+        .as_ref()
+        .map(|c| c.call_count() >= budget_calls)
+        .unwrap_or(false);
     if !git.has_changes().await? {
         return Ok(DevelopOutcome {
             summary: format!("{summary}\n\n(no workspace changes)"),
