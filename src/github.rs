@@ -581,27 +581,26 @@ impl GitHubClient {
             "{}/orgs/{org}/teams/{team}/memberships/{login}",
             self.api
         );
-        match self.send(|| self.request(reqwest::Method::GET, &url)).await {
-            Ok(resp) => {
-                if resp.status().as_u16() == 404 {
-                    return false;
-                }
-                match Self::error_for_status(resp).await {
-                    Ok(resp) => {
-                        #[derive(serde::Deserialize)]
-                        struct MembershipResp {
-                            state: String,
-                        }
-                        match resp.json::<MembershipResp>().await {
-                            Ok(body) => body.state.eq_ignore_ascii_case("active"),
-                            Err(_) => false,
-                        }
-                    }
-                    Err(_) => false,
-                }
-            }
-            Err(_) => false,
+        let Ok(resp) = self
+            .send(|| self.request(reqwest::Method::GET, &url))
+            .await
+        else {
+            return false;
+        };
+        if resp.status().as_u16() == 404 {
+            return false;
         }
+        let Ok(resp) = Self::error_for_status(resp).await else {
+            return false;
+        };
+        #[derive(serde::Deserialize)]
+        struct MembershipResp {
+            state: String,
+        }
+        let Ok(body) = resp.json::<MembershipResp>().await else {
+            return false;
+        };
+        body.state.eq_ignore_ascii_case("active")
     }
 
     // ------------------------------------------------------------------

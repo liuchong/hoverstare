@@ -497,28 +497,8 @@ impl Config {
             .filter(|v| !v.is_empty())
             .map(SecretString::from);
 
-        // Fine-grained permissions (spec 12): env > toml > defaults
+        // Fine-grained permissions (spec 12): toml > defaults
         let mut permissions = t.permissions.unwrap_or_default();
-        if let Ok(v) = std::env::var("HOVERSTARE_PERMISSIONS_AUTO_REVIEW") {
-            if !v.trim().is_empty() {
-                permissions.auto_review = v.split(',').map(|s| s.trim().to_string()).collect();
-            }
-        }
-        if let Ok(v) = std::env::var("HOVERSTARE_PERMISSIONS_REVIEW") {
-            if !v.trim().is_empty() {
-                permissions.review = v.split(',').map(|s| s.trim().to_string()).collect();
-            }
-        }
-        if let Ok(v) = std::env::var("HOVERSTARE_PERMISSIONS_DEVELOP") {
-            if !v.trim().is_empty() {
-                permissions.develop = v.split(',').map(|s| s.trim().to_string()).collect();
-            }
-        }
-        if let Ok(v) = std::env::var("HOVERSTARE_PERMISSIONS_MERGE") {
-            if !v.trim().is_empty() {
-                permissions.merge = v.split(',').map(|s| s.trim().to_string()).collect();
-            }
-        }
         // Empty lists fall back to defaults (spec 12 §6.3)
         if permissions.auto_review.is_empty() {
             permissions.auto_review = default_auto_review();
@@ -633,6 +613,11 @@ mod tests {
     }
 
     #[test]
+    fn permissions_unknown_fields_rejected() {
+        assert!(merge_str("[permissions]\nunknown_key = 1").is_err());
+    }
+
+    #[test]
     fn permissions_defaults_match_current_behavior() {
         let c = merge_str("").unwrap();
         assert_eq!(c.permissions.auto_review, vec!["anyone"]);
@@ -658,18 +643,6 @@ merge = ["admin", "maintain"]"#,
     }
 
     #[test]
-    fn permissions_env_overrides_toml() {
-        unsafe {
-            std::env::set_var("HOVERSTARE_PERMISSIONS_REVIEW", "owner,@bob");
-        }
-        let c = merge_str("[permissions]\nreview = [\"collaborator\"]").unwrap();
-        assert_eq!(c.permissions.review, vec!["owner", "@bob"]);
-        unsafe {
-            std::env::remove_var("HOVERSTARE_PERMISSIONS_REVIEW");
-        }
-    }
-
-    #[test]
     fn permissions_empty_list_falls_back_to_default() {
         let c = merge_str("[permissions]\nreview = []").unwrap();
         assert_eq!(c.permissions.review, vec!["collaborator"]);
@@ -677,14 +650,34 @@ merge = ["admin", "maintain"]"#,
 
     #[test]
     fn permissions_invalid_entries_rejected() {
-        assert!(merge_str(r#"[permissions]
-review = ["everyone"]"#).is_err());
-        assert!(merge_str(r#"[permissions]
-review = ["@foo/bar/baz"]"#).is_err());
-        assert!(merge_str(r#"[permissions]
-review = ["@"]"#).is_err());
-        assert!(merge_str(r#"[permissions]
-review = ["@/team"]"#).is_err());
+        assert!(
+            merge_str(
+                r#"[permissions]
+review = ["everyone"]"#,
+            )
+            .is_err()
+        );
+        assert!(
+            merge_str(
+                r#"[permissions]
+review = ["@foo/bar/baz"]"#,
+            )
+            .is_err()
+        );
+        assert!(
+            merge_str(
+                r#"[permissions]
+review = ["@"]"#,
+            )
+            .is_err()
+        );
+        assert!(
+            merge_str(
+                r#"[permissions]
+review = ["@/team"]"#,
+            )
+            .is_err()
+        );
     }
 
     #[test]
