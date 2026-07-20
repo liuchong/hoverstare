@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::agent::tools::ToolShared;
 use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::cli::ReviewArgs;
-use crate::config::Config;
+use crate::config::{Actor, Config, PermissionKey};
 use crate::event::MentionEvent;
 use crate::github::{GitHubClient, Repo};
 use crate::i18n::T;
@@ -88,13 +88,25 @@ pub async fn run_mention_event(cfg: &Config, ev: &MentionEvent) -> anyhow::Resul
     let repo = Repo::parse(&ev.repo).map_err(|e| anyhow::anyhow!("{e}"))?;
     let gh = GitHubClient::new(cfg.github_token.clone())?;
 
-    // Permission: only repo collaborators may trigger (spec 09)
-    if !ev.is_collaborator() {
-        let _ = gh.create_reaction(&repo, ev, "eyes").await;
-        return Ok(Outcome::Skipped(format!(
-            "comment author {} is not a collaborator, ignored",
-            ev.author_association
-        )));
+    // Permission: help is always allowed; review/explain use the `review` key (spec 12)
+    if cmd != MentionCommand::Help {
+        let evaluator = cfg.permissions_evaluator();
+        let actor = Actor {
+            login: &ev.author,
+            author_association: &ev.author_association,
+        };
+        if !evaluator
+            .evaluate(PermissionKey::Review, &gh, &repo, actor)
+            .await
+        {
+            let t = T::new(cfg.language);
+            let _ = gh.create_issue_comment(&repo, ev.pr_number, t.permission_denied()).await;
+            let _ = gh.create_reaction(&repo, ev, "eyes").await;
+            return Ok(Outcome::Skipped(format!(
+                "comment author {} does not have permission for review command",
+                ev.author_association
+            )));
+        }
     }
 
     // Accepted reaction (spec 09)

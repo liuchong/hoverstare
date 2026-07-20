@@ -21,6 +21,8 @@ pub struct MentionEvent {
     pub comment_id: u64,
     pub body: String,
     pub author_association: String,
+    /// Login of the comment author (used by the permissions system, spec 12)
+    pub author: String,
     /// In pull_request_review_comment events, the id of the comment being
     /// replied to (None for issue_comment)
     pub in_reply_to: Option<u64>,
@@ -95,6 +97,11 @@ pub fn resolve_mention() -> anyhow::Result<Option<MentionEvent>> {
             comment_id: comment.id,
             body: comment.body,
             author_association: comment.author_association,
+            author: comment
+                .user
+                .as_ref()
+                .map(|u| u.login.clone())
+                .unwrap_or_default(),
             in_reply_to: None,
         }));
     }
@@ -105,6 +112,11 @@ pub fn resolve_mention() -> anyhow::Result<Option<MentionEvent>> {
             comment_id: comment.id,
             body: comment.body,
             author_association: comment.author_association,
+            author: comment
+                .user
+                .as_ref()
+                .map(|u| u.login.clone())
+                .unwrap_or_default(),
             in_reply_to: comment.in_reply_to_id,
         }));
     }

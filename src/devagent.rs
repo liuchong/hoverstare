@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::rig_backend::RigBackend;
 use crate::agent::tools::ToolShared;
 use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
-use crate::config::Config;
+use crate::config::{Actor, Config, PermissionKey};
 use crate::develop::{self};
 use crate::event::{DevEvent, DevKind};
 use crate::git::GitRepo;

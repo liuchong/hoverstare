@@ -549,6 +549,66 @@ impl GitHubClient {
         Ok(body["body"].as_str().unwrap_or_default().to_string())
     }
 
+    /// Fetch a user's collaborator permission level for this repo (spec 12).
+    pub async fn get_collaborator_permission(
+        &self,
+        repo: &Repo,
+        login: &str,
+    ) -> Result<RepoPermission, GitHubError> {
+        let url = format!(
+            "{}/repos/{}/{}/collaborators/{login}/permission",
+            self.api, repo.owner, repo.name
+        );
+        let resp = self
+            .send(|| self.request(reqwest::Method::GET, &url))
+            .await?;
+        let resp = Self::error_for_status(resp).await?;
+        #[derive(serde::Deserialize)]
+        struct PermResp {
+            permission: String,
+        }
+        let body: PermResp = resp.json().await?;
+        RepoPermission::parse(&body.permission).ok_or_else(|| GitHubError::Api {
+            status: 200,
+            body: format!("unknown permission: {}", body.permission),
+        })
+    }
+
+    /// Check whether a user is an active member of an org team (spec 12).
+    /// Treats any API error (including non-org repos) as "not a member".
+    pub async fn check_team_membership(
+        &self,
+        org: &str,
+        team: &str,
+        login: &str,
+    ) -> bool {
+        let url = format!(
+            "{}/orgs/{org}/teams/{team}/memberships/{login}",
+            self.api
+        );
+        match self.send(|| self.request(reqwest::Method::GET, &url)).await {
+            Ok(resp) => {
+                if resp.status().as_u16() == 404 {
+                    return false;
+                }
+                match Self::error_for_status(resp).await {
+                    Ok(resp) => {
+                        #[derive(serde::Deserialize)]
+                        struct MembershipResp {
+                            state: String,
+                        }
+                        match resp.json::<MembershipResp>().await {
+                            Ok(body) => body.state.eq_ignore_ascii_case("active"),
+                            Err(_) => false,
+                        }
+                    }
+                    Err(_) => false,
+                }
+            }
+            Err(_) => false,
+        }
+    }
+
     // ------------------------------------------------------------------
     // GraphQL
     // ------------------------------------------------------------------
