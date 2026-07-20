@@ -224,7 +224,9 @@ HoverStare kann auch *entwickeln* — Issues und PRs werden zu einer dialoggeste
 Einrichtung: füge die Trigger `issues` und `pull_request_review` hinzu und vergib `contents: write` + `issues: write`. Vollständiges Beispiel: `.github/workflows/hoverstare.yml`. Hinweise:
 
 - Nur Repo-Collaborators können Befehle erteilen; Fork-PRs sind ausgeschlossen.
-- Für Pushes übergib ein PAT über den Input `gh_pat` oder nutze ein GitHub-App-Token mit `contents: write` — Pushes mit dem Standard-`GITHUB_TOKEN` lösen **keine** CI aus, Required Checks würden auf Bot-Commits nie laufen.
+- Für Pushes übergib ein PAT über den Input `gh_pat` oder nutze ein GitHub-App-Token mit `contents: write` — Pushes mit dem Standard-`GITHUB_TOKEN` lösen **keine** CI aus, Required Checks würden auf Bot-Commits nie laufen. Auch Mergen braucht `contents: write` (ein Squash-Merge erzeugt einen Commit auf dem Base-Branch).
+- CI für vom Bot geöffnete PRs kann je nach Actions-Policy des Repos (First-time Contributors) eine manuelle Genehmigung brauchen (action_required).
+- Große Aufgaben werden in budgetierte Runden geschnitten; der Bot setzt sich selbst fort (max. 10 Runden pro PR). Er kann keine Builds oder Tests ausführen — CI-Fehler werden als Anweisungen an die nächste Runde weitergereicht.
 
 ## FAQ
 

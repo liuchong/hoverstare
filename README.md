@@ -231,7 +231,13 @@ for a complete working example. Notes:
 - Only repo collaborators can issue commands; fork PRs are out of scope.
 - For pushes, pass a PAT via the `gh_pat` input or use a GitHub App token with
   `contents: write` — pushes made with the default `GITHUB_TOKEN` do **not**
-  trigger CI, so required checks would never run on bot commits.
+  trigger CI, so required checks would never run on bot commits. Merging also
+  requires `contents: write` (a squash merge creates a commit on the base branch).
+- PRs opened by the bot may hold CI in *action_required* state until approved,
+  depending on your repo's Actions approval policy (first-time contributors).
+- Large tasks are sliced into budgeted rounds; the bot self-continues
+  (max 10 rounds per PR). It cannot run builds or tests — CI failures are
+  relayed back as instructions for the next round.
 
 ## FAQ
 

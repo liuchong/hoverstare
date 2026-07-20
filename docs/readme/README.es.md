@@ -222,7 +222,9 @@ HoverStare también puede *desarrollar* — los issues y PRs se convierten en un
 Configuración: añade los disparadores `issues` y `pull_request_review` y concede `contents: write` + `issues: write`. Ejemplo completo en `.github/workflows/hoverstare.yml`. Notas:
 
 - Solo los colaboradores del repo pueden dar comandos; los PRs de fork están fuera de alcance.
-- Para los pushes, pasa un PAT con la entrada `gh_pat` o usa un token de GitHub App con `contents: write` — los pushes con el `GITHUB_TOKEN` por defecto **no** disparan CI, así que los checks requeridos nunca correrían en los commits del bot.
+- Para los pushes, pasa un PAT con la entrada `gh_pat` o usa un token de GitHub App con `contents: write` — los pushes con el `GITHUB_TOKEN` por defecto **no** disparan CI, así que los checks requeridos nunca correrían en los commits del bot. Fusionar también requiere `contents: write` (un squash-merge crea un commit en la rama base).
+- Los PRs abiertos por el bot pueden dejar CI pendiente de aprobación (action_required), según la política de Actions del repo (first-time contributors).
+- Las tareas grandes se dividen en rondas presupuestadas; el bot se autocontinúa (máx. 10 rondas por PR). No puede ejecutar builds ni tests — los fallos de CI se transmiten como instrucciones a la siguiente ronda.
 
 ## Preguntas frecuentes
 
