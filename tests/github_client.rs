@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use hoverstare::config::Config;
-use hoverstare::github::{GitHubClient, GitHubError, NewReview, Repo};
+use hoverstare::config::{Actor, Config, PermissionKey, Permissions, PermissionsEvaluator};
+use hoverstare::github::{GitHubClient, GitHubError, NewReview, Repo, RepoPermission};
 use httpmock::prelude::*;
 
 fn repo() -> Repo {
@@ -585,4 +585,187 @@ async fn merge_permission_denied_reacts_and_skips() {
 
     comment_mock.assert_async().await;
     reaction_mock.assert_async().await;
+}
+
+// ---------------------------------------------------------------------------
+// M14：细粒度权限系统补充合约测试（spec 12）
+// ---------------------------------------------------------------------------
+
+/// get_collaborator_permission 解析五种权限等级（spec 12）。
+#[tokio::test]
+async fn get_collaborator_permission_parses_levels() {
+    for (name, expected) in [
+        ("read", RepoPermission::Read),
+        ("triage", RepoPermission::Triage),
+        ("write", RepoPermission::Write),
+        ("maintain", RepoPermission::Maintain),
+        ("admin", RepoPermission::Admin),
+    ] {
+        let server = MockServer::start_async().await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path("/repos/o/r/collaborators/dev/permission");
+                then.status(200)
+                    .json_body(serde_json::json!({"permission": name}));
+            })
+            .await;
+
+        let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+        let got = gh.get_collaborator_permission(&repo(), "dev").await.unwrap();
+        assert_eq!(got, expected, "unexpected level for {name}");
+    }
+}
+
+/// 协作者权限等级：API 返回等级 >= 配置等级时通过。
+#[tokio::test]
+async fn permission_level_greater_or_equal() {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/repos/o/r/collaborators/dev/permission");
+            then.status(200)
+                .json_body(serde_json::json!({"permission": "maintain"}));
+        })
+        .await;
+
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    let perms = Permissions {
+        develop: vec!["read".into()],
+        merge: vec!["write".into()],
+        ..Permissions::default()
+    };
+    let evaluator = PermissionsEvaluator::new(perms);
+    let actor = Actor {
+        login: "dev",
+        author_association: "NONE",
+    };
+
+    assert!(evaluator
+        .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
+        .await);
+    assert!(evaluator
+        .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
+        .await);
+}
+
+/// 协作者权限等级不足时应拒绝。
+#[tokio::test]
+async fn permission_level_too_low_is_denied() {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/repos/o/r/collaborators/dev/permission");
+            then.status(200)
+                .json_body(serde_json::json!({"permission": "triage"}));
+        })
+        .await;
+
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    let perms = Permissions {
+        merge: vec!["write".into()],
+        ..Permissions::default()
+    };
+    let evaluator = PermissionsEvaluator::new(perms);
+    let actor = Actor {
+        login: "dev",
+        author_association: "COLLABORATOR",
+    };
+
+    assert!(!evaluator
+        .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
+        .await);
+}
+
+/// 同一用户跨多个命令键时，协作者权限 API 只调用一次（spec 12 §5 缓存）。
+#[tokio::test]
+async fn permission_level_cache_per_user() {
+    let server = MockServer::start_async().await;
+    let m = server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/repos/o/r/collaborators/dev/permission");
+            then.status(200)
+                .json_body(serde_json::json!({"permission": "admin"}));
+        })
+        .await;
+
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    let perms = Permissions {
+        develop: vec!["read".into()],
+        merge: vec!["write".into()],
+        ..Permissions::default()
+    };
+    let evaluator = PermissionsEvaluator::new(perms);
+    let actor = Actor {
+        login: "dev",
+        author_association: "NONE",
+    };
+
+    assert!(evaluator
+        .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
+        .await);
+    assert!(evaluator
+        .evaluate(PermissionKey::Merge, &gh, &repo(), actor)
+        .await);
+    m.assert_calls_async(1).await;
+}
+
+/// @org/team 命中：用户在团队中且状态 active。
+#[tokio::test]
+async fn team_membership_hit() {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/orgs/o/teams/t/memberships/dev");
+            then.status(200)
+                .json_body(serde_json::json!({"state": "active"}));
+        })
+        .await;
+
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    let perms = Permissions {
+        develop: vec!["@o/t".into()],
+        ..Permissions::default()
+    };
+    let evaluator = PermissionsEvaluator::new(perms);
+    let actor = Actor {
+        login: "dev",
+        author_association: "NONE",
+    };
+
+    assert!(evaluator
+        .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
+        .await);
+}
+
+/// @org/team 未命中：404 视为非成员（个人仓库或团队不存在）。
+#[tokio::test]
+async fn team_membership_miss() {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/orgs/o/teams/t/memberships/dev");
+            then.status(404);
+        })
+        .await;
+
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    let perms = Permissions {
+        develop: vec!["@o/t".into()],
+        ..Permissions::default()
+    };
+    let evaluator = PermissionsEvaluator::new(perms);
+    let actor = Actor {
+        login: "dev",
+        author_association: "OWNER",
+    };
+
+    assert!(!evaluator
+        .evaluate(PermissionKey::Develop, &gh, &repo(), actor)
+        .await);
 }
