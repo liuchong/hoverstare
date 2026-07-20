@@ -205,42 +205,114 @@ impl T {
     // ------------------------------------------------------------------
 
     pub fn help_text(&self) -> String {
-        let lines: [&str; 4] = match self.0 {
-            Lang::En => [
+        let lines: &[&str] = match self.0 {
+            Lang::En => &[
                 "👁 **HoverStare commands**",
+                "",
+                "Review (in a PR comment):",
                 "- `@hoverstare review` — force a full re-review of this PR",
-                "- `@hoverstare explain` — explain a finding (reply inside its thread)",
-                "- `@hoverstare help` — show this help",
+                "- `@hoverstare explain` — explain a finding (reply in its thread)",
+                "- `@hoverstare help` or `@hoverstare /help` — show this help",
+                "",
+                "Develop (issue/PR discussion):",
+                "- `@hoverstare <question>` — discuss an issue and propose a plan",
+                "- `@hoverstare go` — implement the agreed plan",
+                "- `@hoverstare continue` / `@hoverstare merge` — run the next PR dev round / merge",
+                "- `@hoverstare` (bare) — show this help",
+                "- A development thread auto-continues up to 10 rounds and stays on the same repo branch.",
+                "",
+                "Configuration: `.github/hoverstare.toml`",
+                "Docs: `specs/`",
             ],
-            Lang::ZhCn => [
+            Lang::ZhCn => &[
                 "👁 **HoverStare 命令列表**",
+                "",
+                "审查（PR 评论中）：",
                 "- `@hoverstare review` — 强制全量重审本 PR",
-                "- `@hoverstare explain` — 解释某条审查发现（在对应线程中回复使用）",
-                "- `@hoverstare help` — 显示本帮助",
+                "- `@hoverstare explain` — 解释某条审查发现（在对应线程中回复）",
+                "- `@hoverstare help` 或 `@hoverstare /help` — 显示本帮助",
+                "",
+                "开发（Issue/PR 讨论）：",
+                "- `@hoverstare <问题>` — 讨论 Issue 并生成方案",
+                "- `@hoverstare go` — 执行已确认的方案",
+                "- `@hoverstare continue` / `@hoverstare merge` — 下一轮 PR 开发迭代 / 合并",
+                "- 单独的 `@hoverstare` — 显示本帮助",
+                "- 开发线程会自动继续，最多 10 轮，且必须在同一仓库分支内。",
+                "",
+                "配置：`.github/hoverstare.toml`",
+                "文档：`specs/`",
             ],
-            Lang::Ru => [
+            Lang::Ru => &[
                 "👁 **Команды HoverStare**",
+                "",
+                "Ревью (в комментарии к PR):",
                 "- `@hoverstare review` — принудительный полный повторный обзор PR",
                 "- `@hoverstare explain` — объяснить находку (ответ в её треде)",
-                "- `@hoverstare help` — показать эту справку",
+                "- `@hoverstare help` или `@hoverstare /help` — показать эту справку",
+                "",
+                "Разработка (обсуждение issue/PR):",
+                "- `@hoverstare <вопрос>` — обсудить issue и предложить план",
+                "- `@hoverstare go` — реализовать согласованный план",
+                "- `@hoverstare continue` / `@hoverstare merge` — следующий раунд разработки PR / слияние",
+                "- `@hoverstare` без команды — показать эту справку",
+                "- Поток разработки продолжается автоматически до 10 раундов и должен оставаться в одном репозитории/ветке.",
+                "",
+                "Конфигурация: `.github/hoverstare.toml`",
+                "Документация: `specs/`",
             ],
-            Lang::Fr => [
+            Lang::Fr => &[
                 "👁 **Commandes HoverStare**",
+                "",
+                "Revue (dans un commentaire de PR):",
                 "- `@hoverstare review` — forcer une nouvelle revue complète de cette PR",
                 "- `@hoverstare explain` — expliquer une constat (répondre dans son fil)",
-                "- `@hoverstare help` — afficher cette aide",
+                "- `@hoverstare help` ou `@hoverstare /help` — afficher cette aide",
+                "",
+                "Développement (discussion issue/PR):",
+                "- `@hoverstare <question>` — discuter d'une issue et proposer un plan",
+                "- `@hoverstare go` — implémenter le plan convenu",
+                "- `@hoverstare continue` / `@hoverstare merge` — tour de développement PR suivant / fusionner",
+                "- `@hoverstare` seul — afficher cette aide",
+                "- Un fil de développement se poursuit automatiquement jusqu'à 10 tours, sur la même branche du même dépôt.",
+                "",
+                "Configuration : `.github/hoverstare.toml`",
+                "Docs : `specs/`",
             ],
-            Lang::De => [
+            Lang::De => &[
                 "👁 **HoverStare-Befehle**",
+                "",
+                "Review (im PR-Kommentar):",
                 "- `@hoverstare review` — vollständiges Re-Review dieses PRs erzwingen",
                 "- `@hoverstare explain` — einen Befund erklären (in seinem Thread antworten)",
-                "- `@hoverstare help` — diese Hilfe anzeigen",
+                "- `@hoverstare help` oder `@hoverstare /help` — diese Hilfe anzeigen",
+                "",
+                "Entwicklung (Issue-/PR-Diskussion):",
+                "- `@hoverstare <Frage>` — ein Issue besprechen und einen Plan vorschlagen",
+                "- `@hoverstare go` — den vereinbarten Plan umsetzen",
+                "- `@hoverstare continue` / `@hoverstare merge` — nächste PR-Entwicklungsrunde / mergen",
+                "- `@hoverstare` allein — diese Hilfe anzeigen",
+                "- Ein Entwicklungs-Thread läuft automatisch bis zu 10 Runden weiter, im selben Repo/Zweig.",
+                "",
+                "Konfiguration: `.github/hoverstare.toml`",
+                "Dokumentation: `specs/`",
             ],
-            Lang::Es => [
+            Lang::Es => &[
                 "👁 **Comandos de HoverStare**",
+                "",
+                "Revisión (en un comentario de PR):",
                 "- `@hoverstare review` — forzar una revisión completa de este PR",
                 "- `@hoverstare explain` — explicar un hallazgo (responder en su hilo)",
-                "- `@hoverstare help` — mostrar esta ayuda",
+                "- `@hoverstare help` o `@hoverstare /help` — mostrar esta ayuda",
+                "",
+                "Desarrollo (discusión de issue/PR):",
+                "- `@hoverstare <pregunta>` — discutir un issue y proponer un plan",
+                "- `@hoverstare go` — implementar el plan acordado",
+                "- `@hoverstare continue` / `@hoverstare merge` — siguiente ronda de desarrollo del PR / merge",
+                "- `@hoverstare` solo — mostrar esta ayuda",
+                "- Un hilo de desarrollo continúa automáticamente hasta 10 rondas, en la misma rama del mismo repositorio.",
+                "",
+                "Configuración: `.github/hoverstare.toml`",
+                "Documentación: `specs/`",
             ],
         };
         lines.join("\n")
@@ -422,6 +494,21 @@ mod tests {
         assert_eq!(Lang::resolve(None, Some("de")), Lang::De);
         assert_eq!(Lang::resolve(None, None), Lang::En);
         assert_eq!(Lang::resolve(Some("  "), Some("ru")), Lang::Ru);
+    }
+
+    #[test]
+    fn help_text_covers_commands() {
+        for lang in [Lang::En, Lang::ZhCn, Lang::Ru, Lang::Fr, Lang::De, Lang::Es] {
+            let text = T::new(lang).help_text().to_lowercase();
+            assert!(
+                text.contains("review"),
+                "help_text for {lang:?} should mention review"
+            );
+            assert!(
+                text.contains("merge"),
+                "help_text for {lang:?} should mention merge"
+            );
+        }
     }
 
     #[test]

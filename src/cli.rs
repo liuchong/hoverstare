@@ -3,10 +3,15 @@
 use clap::{Args, Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
-use crate::{config, devagent, develop, event, mention, orchestrator};
+use crate::{config, devagent, develop, event, i18n, mention, orchestrator};
 
 #[derive(Parser)]
-#[command(name = "hoverstare", version, about = "Repo-aware AI code review bot")]
+#[command(
+    name = "hoverstare",
+    version,
+    about = "Repo-aware AI code review bot",
+    disable_help_subcommand = true
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -26,6 +31,8 @@ pub enum Command {
     Develop(DevelopArgs),
     /// Run as a webhook service (optional self-hosted, spec 10)
     Serve(ServeArgs),
+    /// Show help and exit (works without LLM credentials, issue #6)
+    Help,
 }
 
 #[derive(Args)]
@@ -105,6 +112,7 @@ pub async fn run() {
         Command::Mention => run_mention().await,
         Command::Develop(develop_args) => run_develop(develop_args).await,
         Command::Serve(serve_args) => run_serve(serve_args).await,
+        Command::Help => run_help(),
     };
     std::process::exit(code);
 }
@@ -115,6 +123,13 @@ fn load_config() -> Result<config::Config, i32> {
         tracing::error!("config error: {e:#}");
         1
     })
+}
+
+/// Print localized help to stdout without loading config (issue #6)
+fn run_help() -> i32 {
+    let lang = i18n::Lang::resolve(std::env::var("HOVERSTARE_LANGUAGE").ok().as_deref(), None);
+    println!("{}", i18n::T::new(lang).help_text());
+    0
 }
 
 async fn run_review(args: ReviewArgs) -> i32 {

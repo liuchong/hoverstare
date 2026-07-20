@@ -24,14 +24,19 @@ pub fn parse_command(body: &str) -> Option<MentionCommand> {
     let stripped = strip_code_blocks(body);
     let at = stripped.find("@hoverstare")?;
     let after = stripped[at + "@hoverstare".len()..].trim_start();
-    let first: String = after
+    let mut first: String = after
         .chars()
         .take_while(|c| c.is_alphabetic())
         .collect::<String>()
         .to_lowercase();
+    if first.is_empty() {
+        // Accept slash aliases such as `@hoverstare /help` (issue #6)
+        first = after.split_whitespace().next().unwrap_or("").to_lowercase();
+    }
     Some(match first.as_str() {
         "review" => MentionCommand::Review,
         "explain" => MentionCommand::Explain,
+        "help" | "/help" => MentionCommand::Help,
         // Unrecognized commands and bare @hoverstare -> help (spec 09)
         _ => MentionCommand::Help,
     })
@@ -236,6 +241,10 @@ mod tests {
         );
         assert_eq!(
             parse_command("@hoverstare help"),
+            Some(MentionCommand::Help)
+        );
+        assert_eq!(
+            parse_command("@hoverstare /help"),
             Some(MentionCommand::Help)
         );
         assert_eq!(parse_command("@hoverstare"), Some(MentionCommand::Help));
