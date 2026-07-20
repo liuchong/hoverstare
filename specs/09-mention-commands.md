@@ -20,9 +20,23 @@
 |---|---|
 | `@hoverstare review` | 强制**全量**重审（忽略增量状态），常用于 force-push 或调参后 |
 | `@hoverstare explain` | 在评论所在线程（或回复引用的线程）里，针对该 finding 用一段通俗解释回复：为什么是问题、什么条件下触发、怎么改 |
-| `@hoverstare help` | 回复命令列表 |
+| `@hoverstare help` / `@hoverstare /help` | 回复统一帮助文本 |
 
-未识别的命令 → 回复 help 文本。
+未识别的命令和裸 `@hoverstare` → 回复 help 文本。
+
+## 统一帮助（help 功能，2026-07-20 补充）
+
+帮助内容**单一来源**：`i18n.rs` 的 `help_text()`（六语言），覆盖审查命令
+（review/explain/help）与开发命令（spec 11：issue 讨论/计划、`go`、PR 开发轮、
+`merge`、自触发与 10 轮熔断、同仓分支限制），并附配置与文档入口。
+
+输出方式（同一内容，多处可达）：
+
+| 入口 | 行为 |
+|---|---|
+| `@hoverstare help` 或 `@hoverstare /help`（评论） | 在所在 issue/PR 回复帮助文本 |
+| 裸 `@hoverstare` 或未识别命令 | 同上（help 是兜底命令） |
+| CLI `hoverstare help` | 打印帮助文本到 stdout；**不需要 LLM 凭据**（不加载 config，直接输出），语言跟随 `HOVERSTARE_LANGUAGE` |
 
 ## 行为规则
 
