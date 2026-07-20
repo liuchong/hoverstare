@@ -12,7 +12,10 @@ hoverstare <COMMAND>
 Commands:
   review    审查一个 PR（GitHub Actions 中的主入口）
   mention   处理一条 @hoverstare 评论（issue_comment 事件入口，M6）
+  develop   处理 issue / PR 开发模式事件（M11-M13）
+  serve     启动自托管 webhook 服务（M8）
   version   打印版本
+  help      打印帮助信息
 ```
 
 ### `hoverstare review`
