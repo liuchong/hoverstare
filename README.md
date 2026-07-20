@@ -206,7 +206,10 @@ Post in a PR (repo collaborators only):
 ## Develop mode: issues & PRs as your AI IDE
 
 HoverStare can also *develop* — issues and PRs become a conversation-driven
-development environment (spec 11):
+development environment (spec 11/12). Not automation glue that reacts to
+events: a place where you actually build the feature, end to end, in the open.
+
+### How a feature flows
 
 **Issue mainline** — file an issue mentioning `@hoverstare`:
 
@@ -221,18 +224,30 @@ development environment (spec 11):
   (Conventional Commits, authored as `hoverstare[bot]`), pushes back to the
   branch, and reports in a comment. Rounds that exhaust their budget
   self-continue (max 10 rounds per PR).
+- Humans can adjust by committing to the branch directly — the next round
+  always syncs to the remote head first and never overwrites your commits.
 - `@hoverstare merge` — once checks are green and there are no conflicts, it
-  squash-merges and deletes the source branch.
+  squash-merges **and deletes the source branch**.
 
-Setup: add the `issues` and `pull_request_review` triggers and grant
-`contents: write` + `issues: write`. See `.github/workflows/hoverstare.yml`
-for a complete working example. Notes:
+### Setup
+
+1. **Workflow**: add the `issues` and `pull_request_review` triggers and grant
+   `contents: write` + `issues: write`. `.github/workflows/hoverstare.yml` in
+   this repo is a complete working example.
+2. **Tokens** (two duties, two tokens):
+   - *Identity* (comments, reviews, opening PRs): the default `GITHUB_TOKEN`,
+     or a GitHub App token for the `hoverstare[bot]` identity.
+   - *Write operations* (git push, merge, branch deletion): a PAT via the
+     `gh_pat` input, or an App with `contents: write`. Pushes made with the
+     default `GITHUB_TOKEN` do **not** trigger CI, so required checks would
+     never run on bot commits.
+3. **Permissions** (optional): declare who can use what in
+   `.github/hoverstare.toml` — see spec 12. Defaults: auto-review for anyone,
+   `@review`/`develop` for collaborators, `merge` for users with write access.
+
+### Notes
 
 - Only repo collaborators can issue commands; fork PRs are out of scope.
-- For pushes, pass a PAT via the `gh_pat` input or use a GitHub App token with
-  `contents: write` — pushes made with the default `GITHUB_TOKEN` do **not**
-  trigger CI, so required checks would never run on bot commits. Merging also
-  requires `contents: write` (a squash merge creates a commit on the base branch).
 - PRs opened by the bot may hold CI in *action_required* state until approved,
   depending on your repo's Actions approval policy (first-time contributors).
 - Large tasks are sliced into budgeted rounds; the bot self-continues
@@ -261,6 +276,21 @@ the thread. For full resolution, store a classic PAT (`repo` scope) as secret
 
 **GitHub Enterprise?**
 Set `GITHUB_API_URL=https://<your-ghe-host>/api/v3`.
+
+**`@hoverstare merge` fails with 403?**
+The merge endpoint needs `contents: write`. Pass a PAT via `gh_pat`, or grant
+the GitHub App Contents: Read and write (and accept the upgrade on the
+installation).
+
+**CI on the bot's PR sits at *action_required*?**
+That's GitHub's approval policy for outside/first-time contributors. Approve
+the runs once, or relax it under *Settings → Actions → General → Fork pull
+request workflows*.
+
+**A `go`/dev round says "no changes, no PR created"?**
+Usually the task was too vague for one budgeted round. Reply with a sharper,
+smaller instruction (files to touch, acceptance criteria) and run `go` again —
+see the bot's comment for what it actually did.
 
 ## Local development
 

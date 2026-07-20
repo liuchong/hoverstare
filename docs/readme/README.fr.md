@@ -207,7 +207,9 @@ Dans les commentaires d'une PR (collaborateurs du dépôt uniquement) :
 
 ## Mode développement : issues et PR comme IDE IA
 
-HoverStare sait aussi *développer* — les issues et PR deviennent un environnement de développement piloté par la conversation (spec 11) :
+HoverStare sait aussi *développer* — les issues et PR deviennent un environnement de développement piloté par la conversation (spec 11/12). Pas une glue d'automatisation qui réagit aux événements : un lieu où vous construisez réellement la fonctionnalité, de bout en bout.
+
+### Le cycle d'une fonctionnalité
 
 **Voie issue** — ouvrez une issue mentionnant `@hoverstare` :
 
@@ -218,12 +220,20 @@ HoverStare sait aussi *développer* — les issues et PR deviennent un environne
 **Voie PR** — sur toute PR de ce dépôt :
 
 - `@hoverstare <instruction>` — il bascule sur la branche de la PR, développe, committe (Conventional Commits, auteur `hoverstare[bot]`), pousse sur la branche et rend compte en commentaire. Les tours qui épuisent leur budget se relancent automatiquement (10 tours max par PR).
-- `@hoverstare merge` — une fois les checks verts et sans conflit, il fusionne en squash et supprime la branche source.
+- Les humains peuvent ajuster par des commits directs sur la branche — le tour suivant se synchronise toujours d'abord sur la tête distante et n'écrase jamais vos commits.
+- `@hoverstare merge` — une fois les checks verts et sans conflit, il fusionne en squash **et supprime la branche source**.
 
-Configuration : ajoutez les déclencheurs `issues` et `pull_request_review` et accordez `contents: write` + `issues: write`. Exemple complet dans `.github/workflows/hoverstare.yml`. Remarques :
+### Configuration
+
+1. **Workflow** : ajoutez les déclencheurs `issues` et `pull_request_review` et accordez `contents: write` + `issues: write`. `.github/workflows/hoverstare.yml` de ce dépôt est un exemple complet.
+2. **Jetons** (deux rôles, deux jetons) :
+   - *Identité* (commentaires, reviews, ouverture de PR) : le `GITHUB_TOKEN` par défaut, ou un jeton de GitHub App pour l'identité `hoverstare[bot]`.
+   - *Écriture* (git push, merge, suppression de branche) : un PAT via l'entrée `gh_pat`, ou une App avec `contents: write`. Les push du `GITHUB_TOKEN` par défaut ne déclenchent **pas** la CI, et les checks requis ne tourneraient jamais sur les commits du bot.
+3. **Permissions** (optionnel) : déclarez qui peut quoi dans `.github/hoverstare.toml` `[permissions]` (spec 12). Défauts : auto-review pour anyone, `review`/`develop` pour collaborator, `merge` pour write.
+
+### Remarques
 
 - Seuls les collaborateurs du dépôt peuvent donner des commandes ; les PR de fork sont hors scope.
-- Pour les push, passez un PAT via l'entrée `gh_pat` ou utilisez un jeton de GitHub App avec `contents: write` — les push du `GITHUB_TOKEN` par défaut ne déclenchent **pas** la CI, et les checks requis ne tourneraient jamais sur les commits du bot. Le merge exige aussi `contents: write` (un squash-merge crée un commit sur la branche de base).
 - Les PR ouvertes par le bot peuvent laisser la CI en attente d'approbation (action_required), selon la politique Actions du dépôt (first-time contributors).
 - Les grosses tâches sont découpées en rounds budgétés ; le bot se relance tout seul (max 10 rounds par PR). Il ne peut pas lancer de builds ni de tests — les échecs CI sont relayés comme instructions au round suivant.
 
@@ -249,6 +259,15 @@ dans le fil. Pour une résolution complète, stockez un PAT classique
 
 **GitHub Enterprise ?**
 Définissez `GITHUB_API_URL=https://<votre-hote-ghe>/api/v3`.
+
+**`@hoverstare merge` échoue avec 403 ?**
+L'endpoint de merge exige `contents: write`. Passez un PAT via `gh_pat`, ou accordez à la GitHub App Contents: Read and write (et acceptez la mise à niveau sur l'installation).
+
+**La CI de la PR du bot reste en action_required ?**
+C'est la politique d'approbation de GitHub pour les contributeurs externes/nouveaux. Approuvez les runs une fois, ou assouplissez dans Settings → Actions → General → Fork pull request workflows.
+
+**Un round go/dev répond « aucun changement, pas de PR créée » ?**
+La tâche était probablement trop vague pour un round budgété. Répondez avec une instruction plus précise et plus petite (fichiers à toucher, critères d'acceptation) et relancez `go` — le commentaire du bot indique ce qu'il a réellement fait.
 
 ## Développement local
 

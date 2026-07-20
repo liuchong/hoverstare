@@ -144,7 +144,9 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
    ubuntu runner 不自带，release/CI workflow 里必须 apt 安装。
 4. **默认 GITHUB_TOKEN 调不了 `resolveReviewThread`**（GitHub 平台限制，
    "Resource not accessible by integration"）→ 自动降级为线程内回复标记修复；
-   完整 resolve 需要 classic PAT（`GH_PAT`，优先于 GITHUB_TOKEN 读取）。
+   完整 resolve 可用 App token 或 classic PAT（`GH_PAT`）。**GH_PAT 只干两件事**：
+   resolve fallback 和开发模式 push——历史上它曾全局优先导致 bot 用人类身份
+   发言，现已职责分离（见硬性约定 #11）。
 5. **GraphQL 错误是 HTTP 200 + errors 字段**，别只看状态码。
 6. **模型会空输出**（实测 2.5 分钟返回空）：空输出跳过 reformat 直接全量重试。
 7. **中文标题聚类**：CJK 无空格分词，用单字+二字组 n-gram 算 Jaccard。
@@ -155,6 +157,43 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
    `GITHUB_TOKEN: ${{ github.token }}`。
 10. **concurrency cancel-in-progress 在 run 级别先于 job `if` 生效**：不含命令的
     评论事件要进独立 noop 组名，否则机器人评论会取消正在跑的审查 run。
+    同类的三个变体都踩过：bot 自己的含命令评论、bot 发的 review
+    （pull_request_review 事件）、dev 轮与审查 run 同组互杀——分组设计必须
+    把"bot 自己产生的事件"和"dev/审查两类工作"都考虑进去。
+11. **重试必须换全新预算**：agent 循环重试共享 ToolShared 计数器会饿死后续
+    重试（issue #9 两轮零改动的根因）——每次 attempt 新建预算对象。
+12. **模型空输出和畸形响应是常态**（Kimi 偶发空文本、ApiResponse 反序列化
+    失败）：develop 循环必须多次尝试（3 次）且后续 attempt 加催促提示，
+    一次失败绝不直接判死刑。
+13. **bash 路由别被 pipefail 秒杀**：提取关键词的 grep 无匹配会 exit 1，
+    `set -euo pipefail` 下整个 step 静默死亡；且 `@hoverstare 中文指令`
+    不含 [A-Za-z] 词，路由逻辑要按"空/review|explain|help → mention，
+    其余 → develop"判断而不是匹配英文词。
+14. **`${{ }}` 表达式里不能写 `#` 注释**（会并进表达式串，workflow 解析失败）。
+15. **squash merge 需要 contents:write**（不是 pull-requests:write）：App 只读
+    时 `@hoverstare merge` 403——写操作全部走 PAT 类令牌，身份仍归 App。
+16. **bot 写的代码不过 fmt**：bot 不能执行代码，每轮都可能引入 rustfmt 偏差，
+    不要让它逐条手改 18 处格式——人跑 `cargo fmt` 提一个 style commit 才是
+    设计内的协作方式（人类可通过 commit 调整分支）。
+
+## 7.5 Dogfood 验证手册（开发模式端到端怎么测）
+
+测开发模式不要改完就跑 Actions 猜结果——分层验证：
+
+1. **本地闭环（最快）**：`hoverstare develop --task "..." [--dry-run]` 在临时
+   仓库里验证写工具+提交；`--repo X --issue N [--go] / --pr N [--merge]
+   [--instruction "..."]` 本地驱动真实 issue/PR（用 `GH_PAT=$(gh auth token)`
+   当写令牌，评论会显示为你的账号——仅测试期）。
+2. **Actions 全链路**：issue 里 `@hoverstare`（讨论）→ 评论 `go`（开 PR）→
+   PR 评论指令（开发轮）→ 等 CI → `@hoverstare merge`。观测点：
+   `gh run list --workflow hoverstare.yml`、issue/PR 评论里的 hoverstare-dev
+   隐藏标记（m=plan/impl, r=轮次）、分支 commit 作者应为 hoverstare[bot]。
+3. **常见卡点对照**：`action_required` → 手动批准 run（bot 是外部贡献者）；
+   push/merge 403 → 写令牌缺 contents:write；"no changes" → 先看 warn 日志里
+   的 agent 摘要和 budget_exhausted；run 显示 cancelled → 查并发组是否又被
+   bot 自己的事件顶掉（手册 #10）。
+4. **测试期令牌纪律**：临时 `GH_PAT` secret 用完即删；验证 App 权限用
+   JWT→installation token 现场铸（私钥不入库），绝不把令牌值写进任何日志。
 
 ## 8. 配置与秘钥管理
 

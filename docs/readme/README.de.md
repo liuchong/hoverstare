@@ -208,7 +208,9 @@ In einem PR posten (nur Repo-Kollaboratoren):
 
 ## Entwicklungsmodus: Issues & PRs als KI-IDE
 
-HoverStare kann auch *entwickeln* — Issues und PRs werden zu einer dialoggesteuerten Entwicklungsumgebung (spec 11):
+HoverStare kann auch *entwickeln* — Issues und PRs werden zu einer dialoggesteuerten Entwicklungsumgebung (spec 11/12). Kein Automatisierungskleber, der auf Events reagiert, sondern ein Ort, an dem du das Feature wirklich von Anfang bis Ende baust.
+
+### Der Weg eines Features
 
 **Issue-Hauptlinie** — lege ein Issue mit `@hoverstare` an:
 
@@ -219,12 +221,20 @@ HoverStare kann auch *entwickeln* — Issues und PRs werden zu einer dialoggeste
 **PR-Hauptlinie** — auf jedem PR dieses Repos:
 
 - `@hoverstare <Anweisung>` — es checkt den PR-Branch aus, entwickelt, committet (Conventional Commits, Autor `hoverstare[bot]`), pusht zurück auf den Branch und berichtet per Kommentar. Runden, die ihr Budget ausschöpfen, setzen sich selbst fort (max. 10 Runden pro PR).
-- `@hoverstare merge` — sobald die Checks grün sind und keine Konflikte bestehen, mergt es per Squash und löscht den Quell-Branch.
+- Menschen können per direktem Commit auf dem Branch nachjustieren — die nächste Runde synchronisiert immer zuerst mit dem Remote-Stand und überschreibt deine Commits nie.
+- `@hoverstare merge` — sobald die Checks grün sind und keine Konflikte bestehen, mergt es per Squash **und löscht den Quell-Branch**.
 
-Einrichtung: füge die Trigger `issues` und `pull_request_review` hinzu und vergib `contents: write` + `issues: write`. Vollständiges Beispiel: `.github/workflows/hoverstare.yml`. Hinweise:
+### Einrichtung
+
+1. **Workflow**: füge die Trigger `issues` und `pull_request_review` hinzu und vergib `contents: write` + `issues: write`. `.github/workflows/hoverstare.yml` in diesem Repo ist ein vollständiges Beispiel.
+2. **Tokens** (zwei Aufgaben, zwei Tokens):
+   - *Identität* (Kommentare, Reviews, PRs öffnen): das Standard-`GITHUB_TOKEN` oder ein GitHub-App-Token für die Identität `hoverstare[bot]`.
+   - *Schreiboperationen* (git push, merge, Branch löschen): ein PAT über den Input `gh_pat` oder eine App mit `contents: write`. Pushes mit dem Standard-`GITHUB_TOKEN` lösen **keine** CI aus, Required Checks würden auf Bot-Commits nie laufen.
+3. **Berechtigungen** (optional): deklariere in `.github/hoverstare.toml` `[permissions]`, wer was darf (spec 12). Defaults: Auto-Review für anyone, `review`/`develop` für collaborator, `merge` für write.
+
+### Hinweise
 
 - Nur Repo-Collaborators können Befehle erteilen; Fork-PRs sind ausgeschlossen.
-- Für Pushes übergib ein PAT über den Input `gh_pat` oder nutze ein GitHub-App-Token mit `contents: write` — Pushes mit dem Standard-`GITHUB_TOKEN` lösen **keine** CI aus, Required Checks würden auf Bot-Commits nie laufen. Auch Mergen braucht `contents: write` (ein Squash-Merge erzeugt einen Commit auf dem Base-Branch).
 - CI für vom Bot geöffnete PRs kann je nach Actions-Policy des Repos (First-time Contributors) eine manuelle Genehmigung brauchen (action_required).
 - Große Aufgaben werden in budgetierte Runden geschnitten; der Bot setzt sich selbst fort (max. 10 Runden pro PR). Er kann keine Builds oder Tests ausführen — CI-Fehler werden als Anweisungen an die nächste Runde weitergereicht.
 
@@ -251,6 +261,15 @@ PAT (`repo`-Scope) als Secret `GH_PAT` und übergib ihn im Workflow-Env.
 
 **GitHub Enterprise?**
 Setze `GITHUB_API_URL=https://<dein-ghe-host>/api/v3`.
+
+**`@hoverstare merge` schlägt mit 403 fehl?**
+Der Merge-Endpunkt braucht `contents: write`. Übergib ein PAT über `gh_pat` oder gib der GitHub App Contents: Read and write (und akzeptiere das Upgrade in der Installation).
+
+**CI auf dem Bot-PR hängt bei action_required?**
+Das ist GitHubs Genehmigungsrichtlinie für externe/Erst-Beitragende. Genehmige die Runs einmal, oder lockere sie unter Settings → Actions → General → Fork pull request workflows.
+
+**Eine go/dev-Runde meldet „keine Änderungen, kein PR erstellt“?**
+Meist war die Aufgabe zu vage für eine budgetierte Runde. Antworte mit einer schärferen, kleineren Anweisung (welche Dateien, Akzeptanzkriterien) und starte `go` erneut — im Kommentar des Bots steht, was er tatsächlich getan hat.
 
 ## Lokale Entwicklung
 

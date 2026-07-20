@@ -206,7 +206,9 @@ Publica en un PR (solo colaboradores del repo):
 
 ## Modo desarrollo: issues y PRs como tu IDE de IA
 
-HoverStare también puede *desarrollar* — los issues y PRs se convierten en un entorno de desarrollo guiado por conversación (spec 11):
+HoverStare también puede *desarrollar* — los issues y PRs se convierten en un entorno de desarrollo guiado por conversación (spec 11/12). No es un pegamento de automatización que reacciona a eventos: es un lugar donde realmente construyes la funcionalidad, de principio a fin.
+
+### El recorrido de una funcionalidad
 
 **Línea de issue** — abre un issue mencionando `@hoverstare`:
 
@@ -217,12 +219,20 @@ HoverStare también puede *desarrollar* — los issues y PRs se convierten en un
 **Línea de PR** — en cualquier PR de este repo:
 
 - `@hoverstare <instrucción>` — cambia a la rama del PR, desarrolla, hace commit (Conventional Commits, autor `hoverstare[bot]`), empuja de vuelta a la rama y reporta en un comentario. Las rondas que agotan el presupuesto se autocontinúan (máx. 10 rondas por PR).
-- `@hoverstare merge` — cuando los checks están en verde y no hay conflictos, fusiona con squash y elimina la rama de origen.
+- Los humanos pueden ajustar con commits directos en la rama — la siguiente ronda siempre sincroniza primero con la cabeza remota y nunca sobrescribe tus commits.
+- `@hoverstare merge` — cuando los checks están en verde y no hay conflictos, fusiona con squash **y elimina la rama de origen**.
 
-Configuración: añade los disparadores `issues` y `pull_request_review` y concede `contents: write` + `issues: write`. Ejemplo completo en `.github/workflows/hoverstare.yml`. Notas:
+### Configuración
+
+1. **Workflow**: añade los disparadores `issues` y `pull_request_review` y concede `contents: write` + `issues: write`. `.github/workflows/hoverstare.yml` en este repo es un ejemplo completo.
+2. **Tokens** (dos roles, dos tokens):
+   - *Identidad* (comentarios, reviews, abrir PRs): el `GITHUB_TOKEN` por defecto, o un token de GitHub App para la identidad `hoverstare[bot]`.
+   - *Escritura* (git push, merge, borrar rama): un PAT con la entrada `gh_pat`, o una App con `contents: write`. Los pushes con el `GITHUB_TOKEN` por defecto **no** disparan CI, así que los checks requeridos nunca correrían en los commits del bot.
+3. **Permisos** (opcional): declara quién puede qué en `.github/hoverstare.toml` `[permissions]` (spec 12). Por defecto: auto-review para anyone, `review`/`develop` para collaborator, `merge` para write.
+
+### Notas
 
 - Solo los colaboradores del repo pueden dar comandos; los PRs de fork están fuera de alcance.
-- Para los pushes, pasa un PAT con la entrada `gh_pat` o usa un token de GitHub App con `contents: write` — los pushes con el `GITHUB_TOKEN` por defecto **no** disparan CI, así que los checks requeridos nunca correrían en los commits del bot. Fusionar también requiere `contents: write` (un squash-merge crea un commit en la rama base).
 - Los PRs abiertos por el bot pueden dejar CI pendiente de aprobación (action_required), según la política de Actions del repo (first-time contributors).
 - Las tareas grandes se dividen en rondas presupuestadas; el bot se autocontinúa (máx. 10 rondas por PR). No puede ejecutar builds ni tests — los fallos de CI se transmiten como instrucciones a la siguiente ronda.
 
@@ -248,6 +258,15 @@ confirmada» en el hilo. Para resolución completa, guarda un PAT clásico
 
 **¿GitHub Enterprise?**
 Define `GITHUB_API_URL=https://<tu-host-ghe>/api/v3`.
+
+**¿`@hoverstare merge` falla con 403?**
+El endpoint de merge requiere `contents: write`. Pasa un PAT con `gh_pat`, o concede a la GitHub App Contents: Read and write (y acepta la actualización en la instalación).
+
+**¿CI del PR del bot se queda en action_required?**
+Es la política de aprobación de GitHub para contribuidores externos/nuevos. Aprueba las ejecuciones una vez, o relájala en Settings → Actions → General → Fork pull request workflows.
+
+**¿Una ronda go/dev responde "sin cambios, no se creó PR"?**
+Normalmente la tarea era demasiado vaga para una ronda presupuestada. Responde con una instrucción más concreta y pequeña (qué archivos tocar, criterios de aceptación) y repite `go` — el comentario del bot dice lo que realmente hizo.
 
 ## Desarrollo local
 
