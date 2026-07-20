@@ -62,6 +62,14 @@ inputs：
   注意：create-github-app-token 会替换后续步骤的 `github.token` 上下文，
   因此 cache 步骤显式固定 `GITHUB_TOKEN: ${{ github.token }}`（App token 无
   cache 写权限，否则 post-cache 报 warning——实测踩坑）。
+- `gh_pat`（可选，spec 11/12）：开发模式的写操作令牌（git push / merge /
+  删分支，需要 contents: write；PAT 推送可触发 CI）。仅写操作使用，
+  API 身份永远是 App token（spec 07 凭据职责分离）。
+
+**事件路由（spec 09/11）**：`pull_request` → review；`issues` 与纯 issue
+评论 → develop；PR 评论按 @hoverstare 后首个词分流——`review|explain|help`
+或空 → mention，其余（含中文指令）→ develop。实现注意：提取首个词时必须
+容忍 grep 无匹配（CJK 指令），不得因 pipefail 静默秒杀。
 
 步骤：
 
