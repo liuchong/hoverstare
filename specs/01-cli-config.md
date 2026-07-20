@@ -12,10 +12,6 @@ hoverstare <COMMAND>
 Commands:
   review    审查一个 PR（GitHub Actions 中的主入口）
   mention   处理一条 @hoverstare 评论（issue_comment 事件入口，M6）
-  develop   开发模式（spec 11）：--task 本地闭环；--repo/--issue/--pr
-            本地驱动 issue/PR 主线；无参数时从 GITHUB_EVENT_PATH 解析
-  help      打印统一帮助（无需 LLM 凭据，spec 09 §统一帮助）
-  serve     webhook 服务模式（spec 10）
   version   打印版本
 ```
 

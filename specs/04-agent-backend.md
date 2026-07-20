@@ -69,10 +69,8 @@ pub struct ToolCallRecord { pub name: String, pub args_summary: String,
 
 ## 只读工具集（`agent/tools/`，框架无关实现）
 
-审查模型的"眼睛"。全部**机器层只读**——不依赖 prompt 约束。
-**ToolProfile（spec 11 补充）**：工具注册按 profile 区分——`ReadOnly`
-（审查/mention/explain 永远只用这个）与 `ReadWrite`（仅 develop 循环，
-追加 `edit_file`/`write_file`，同一沙箱 + 写入专用父目录规范化）。
+审查模型的"眼睛"。全部**机器层只读**——工具注册表里根本不存在写工具，
+不依赖 prompt 约束。
 
 | 工具 | 参数 | 行为 | 输出上限 |
 |---|---|---|---|
