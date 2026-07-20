@@ -275,7 +275,8 @@ async fn implement_issue(
     )
     .await?;
     let branch = format!("hoverstare/issue-{}-{}", ev.number, slug(&title));
-    git.checkout_new(
+    // checkout -B is idempotent: a retried `go` after a no-change round still works
+    git.checkout_reset(
         &branch,
         &format!("refs/remotes/devpush/{}", meta.default_branch),
     )
@@ -303,6 +304,11 @@ async fn implement_issue(
     .await?;
     if outcome.commit.is_none() {
         // Nothing changed: do not open an empty PR.
+        tracing::warn!(
+            "implement_issue: no changes (budget_exhausted={}); agent summary: {}",
+            outcome.budget_exhausted,
+            outcome.summary.chars().take(400).collect::<String>()
+        );
         gh.create_issue_comment(
             repo,
             ev.number,
