@@ -497,9 +497,13 @@ async fn merge_flow(
         .await?;
         return Ok(format!("checks not green: {}", not_green.join(", ")));
     }
-    let sha = gh.merge_pull_request(repo, ev.number).await?;
+    // Merge + branch deletion are WRITE operations: use the PAT-class token
+    // (merge requires contents: write; the App token has read until upgraded).
+    // Comments still go through the identity client (App token).
+    let write_gh = GitHubClient::new(Some(dev_token(cfg)))?;
+    let sha = write_gh.merge_pull_request(repo, ev.number).await?;
     // Delete the merged source branch (spec 11 §6); failure only warns.
-    let branch_note = match gh.delete_branch(repo, &pr.head.ref_name).await {
+    let branch_note = match write_gh.delete_branch(repo, &pr.head.ref_name).await {
         Ok(()) => format!("，源分支 `{}` 已删除", pr.head.ref_name),
         Err(e) => format!("（警告：源分支删除失败：{e}）"),
     };
