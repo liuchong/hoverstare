@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::agent::rig_backend::RigBackend;
 use crate::agent::tools::ToolShared;
 use crate::cli::ReviewArgs;
-use crate::config::{Config, Severity};
+use crate::config::{Actor, Config, PermissionKey, Severity};
 use crate::diff::{self, ParsedDiff};
 use crate::event;
 use crate::findings::AnalysisResult;
@@ -163,6 +163,30 @@ pub async fn run_review(
             format!("bot author: {}", pr.user.login),
         )
         .await);
+    }
+
+    // Auto-review permission gate (spec 12): actor is the PR author.
+    // The `review` subcommand (force_full=false) follows the pull_request event path;
+    // the mention `review` command (force_full=true) already checked the `review` key.
+    if !force_full {
+        let evaluator = cfg.permissions_evaluator();
+        let actor = Actor {
+            login: &pr.user.login,
+            author_association: pr.author_association.as_deref().unwrap_or_default(),
+        };
+        if !evaluator
+            .evaluate(PermissionKey::AutoReview, &gh, &repo, actor)
+            .await
+        {
+            return Ok(skip_outcome(
+                cfg,
+                &gh,
+                &repo,
+                &head_sha,
+                "auto-review permission denied".into(),
+            )
+            .await);
+        }
     }
 
     // Incremental-mode check (spec 07): find the most recent review containing hoverstare-meta
@@ -440,7 +464,8 @@ async fn resolve_or_reply(
         Err(e) => {
             let Some(cid) = comment_id else {
                 tracing::warn!(
-                    "failed to resolve thread {thread_id} and no comment id available for fallback: {e}"
+                    "failed to resolve thread {thread_id} and no comment id \
+                     available for fallback: {e}"
                 );
                 return ResolveOutcome::Failed;
             };
@@ -599,7 +624,8 @@ pub async fn analyze(
     let st = &outcome.stats;
     if st.passes_run > 1 || st.clusters > 0 {
         tracing::info!(
-            "pipeline stats: {} pass(es), {} cluster(s), {} voted in, {} verified in, {} dropped (findings per pass: {:?})",
+            "pipeline stats: {} pass(es), {} cluster(s), {} voted in, {} verified \
+             in, {} dropped (findings per pass: {:?})",
             st.passes_run,
             st.clusters,
             st.voted_in,

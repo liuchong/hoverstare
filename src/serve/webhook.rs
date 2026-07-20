@@ -115,6 +115,10 @@ pub fn parse_event(event_type: &str, payload: &serde_json::Value) -> HookEvent {
                         .as_str()
                         .unwrap_or_default()
                         .to_string(),
+                    author: comment["user"]["login"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string(),
                     in_reply_to: None,
                 },
             })
@@ -139,6 +143,10 @@ pub fn parse_event(event_type: &str, payload: &serde_json::Value) -> HookEvent {
                     comment_id: comment["id"].as_u64().unwrap_or(0),
                     body: comment["body"].as_str().unwrap_or_default().to_string(),
                     author_association: comment["author_association"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string(),
+                    author: comment["user"]["login"]
                         .as_str()
                         .unwrap_or_default()
                         .to_string(),

@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
+use dashmap::DashMap;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -46,6 +47,8 @@ pub struct Config {
     pub llm: LlmCredentials,
     /// M3 (tool sandbox root)
     pub workspace: PathBuf,
+    /// M14 (fine-grained permissions, spec 12)
+    pub permissions: Permissions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -119,6 +122,235 @@ pub enum LlmCredentials {
     },
 }
 
+/// Fine-grained command permissions (spec 12).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Permissions {
+    #[serde(default = "default_auto_review")]
+    pub auto_review: Vec<String>,
+    #[serde(default = "default_review")]
+    pub review: Vec<String>,
+    #[serde(default = "default_develop")]
+    pub develop: Vec<String>,
+    #[serde(default = "default_merge")]
+    pub merge: Vec<String>,
+}
+
+impl Default for Permissions {
+    fn default() -> Self {
+        Self {
+            auto_review: default_auto_review(),
+            review: default_review(),
+            develop: default_develop(),
+            merge: default_merge(),
+        }
+    }
+}
+
+fn default_auto_review() -> Vec<String> {
+    vec!["anyone".to_string()]
+}
+fn default_review() -> Vec<String> {
+    vec!["collaborator".to_string()]
+}
+fn default_develop() -> Vec<String> {
+    vec!["collaborator".to_string()]
+}
+fn default_merge() -> Vec<String> {
+    vec!["write".to_string()]
+}
+
+const VALID_ASSOCIATIONS: &[&str] = &["anyone", "contributor", "collaborator", "member", "owner"];
+const VALID_PERMISSION_LEVELS: &[&str] = &["read", "triage", "write", "maintain", "admin"];
+
+impl Permissions {
+    /// Fail-fast validation of every permission entry (spec 12 §6.3).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        for key in [&self.auto_review, &self.review, &self.develop, &self.merge] {
+            for entry in key {
+                Self::validate_entry(entry)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_entry(entry: &str) -> anyhow::Result<()> {
+        let e = entry.trim().to_ascii_lowercase();
+        if VALID_ASSOCIATIONS.contains(&e.as_str()) || VALID_PERMISSION_LEVELS.contains(&e.as_str())
+        {
+            return Ok(());
+        }
+        if let Some(rest) = e.strip_prefix('@') {
+            if rest.is_empty() {
+                bail!("invalid permission entry: empty @ name in {entry:?}");
+            }
+            if !rest.contains('/') {
+                return Ok(()); // @user
+            }
+            let parts: Vec<&str> = rest.split('/').collect();
+            if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+                return Ok(()); // @org/team
+            }
+        }
+        bail!("invalid permission entry: {entry:?}")
+    }
+
+    pub fn get(&self, key: PermissionKey) -> &[String] {
+        match key {
+            PermissionKey::AutoReview => &self.auto_review,
+            PermissionKey::Review => &self.review,
+            PermissionKey::Develop => &self.develop,
+            PermissionKey::Merge => &self.merge,
+        }
+    }
+}
+
+/// Command key being evaluated (spec 12 §4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionKey {
+    AutoReview,
+    Review,
+    Develop,
+    Merge,
+}
+
+impl PermissionKey {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PermissionKey::AutoReview => "auto_review",
+            PermissionKey::Review => "review",
+            PermissionKey::Develop => "develop",
+            PermissionKey::Merge => "merge",
+        }
+    }
+}
+
+/// The actor whose permissions are being evaluated.
+#[derive(Debug, Clone, Copy)]
+pub struct Actor<'a> {
+    pub login: &'a str,
+    pub author_association: &'a str,
+}
+
+/// Evaluates `[permissions]` entries against a concrete actor, caching
+/// collaborator-permission API results per user per run (spec 12 §5).
+#[derive(Debug, Clone)]
+pub struct PermissionsEvaluator {
+    permissions: Permissions,
+    cache: DashMap<String, crate::github::RepoPermission>,
+}
+
+impl PermissionsEvaluator {
+    pub fn new(permissions: Permissions) -> Self {
+        Self {
+            permissions,
+            cache: DashMap::new(),
+        }
+    }
+
+    /// Evaluate a single command key. Any matching entry grants access (OR).
+    pub async fn evaluate(
+        &self,
+        key: PermissionKey,
+        gh: &crate::github::GitHubClient,
+        repo: &crate::github::Repo,
+        actor: Actor<'_>,
+    ) -> bool {
+        let entries = self.permissions.get(key);
+        if entries.is_empty() {
+            return false;
+        }
+
+        // First pass: free entries (author_association, @user, @org/team).
+        for entry in entries {
+            if self.evaluate_free_entry(entry, gh, repo, actor).await {
+                return true;
+            }
+        }
+
+        // Second pass: collaborator permission levels only if no free entry hit.
+        let requires_level = entries
+            .iter()
+            .filter_map(|e| crate::github::RepoPermission::parse(e))
+            .collect::<Vec<_>>();
+        if requires_level.is_empty() {
+            return false;
+        }
+        let Some(user_perm) = self.fetch_permission(gh, repo, actor.login).await else {
+            return false;
+        };
+        requires_level.iter().any(|req| user_perm >= *req)
+    }
+
+    async fn evaluate_free_entry(
+        &self,
+        entry: &str,
+        gh: &crate::github::GitHubClient,
+        _repo: &crate::github::Repo,
+        actor: Actor<'_>,
+    ) -> bool {
+        let e = entry.trim().to_ascii_lowercase();
+        match e.as_str() {
+            "anyone" => true,
+            "contributor" => actor_association_matches(actor.author_association, "CONTRIBUTOR"),
+            "collaborator" => actor_association_matches_one_of(
+                actor.author_association,
+                &["OWNER", "MEMBER", "COLLABORATOR"],
+            ),
+            "member" => {
+                actor_association_matches_one_of(actor.author_association, &["OWNER", "MEMBER"])
+            }
+            "owner" => actor_association_matches(actor.author_association, "OWNER"),
+            _ if e.starts_with('@') => {
+                let rest = &e[1..];
+                if !rest.contains('/') {
+                    actor.login.eq_ignore_ascii_case(rest)
+                } else {
+                    let parts: Vec<&str> = rest.split('/').collect();
+                    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
+                        return false;
+                    }
+                    gh.check_team_membership(parts[0], parts[1], actor.login)
+                        .await
+                }
+            }
+            _ => false,
+        }
+    }
+
+    async fn fetch_permission(
+        &self,
+        gh: &crate::github::GitHubClient,
+        repo: &crate::github::Repo,
+        login: &str,
+    ) -> Option<crate::github::RepoPermission> {
+        if login.is_empty() {
+            return None;
+        }
+        if let Some(p) = self.cache.get(login) {
+            return Some(*p);
+        }
+        match gh.get_collaborator_permission(repo, login).await {
+            Ok(p) => {
+                self.cache.insert(login.to_string(), p);
+                Some(p)
+            }
+            Err(e) => {
+                tracing::warn!("failed to fetch collaborator permission for {login}: {e}");
+                None
+            }
+        }
+    }
+}
+
+fn actor_association_matches(association: &str, expected: &str) -> bool {
+    association.eq_ignore_ascii_case(expected)
+}
+
+fn actor_association_matches_one_of(association: &str, expected: &[&str]) -> bool {
+    expected.iter().any(|e| association.eq_ignore_ascii_case(e))
+}
+
 /// File structure of `.github/hoverstare.toml` (all optional)
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -138,6 +370,7 @@ struct TomlConfig {
     instructions: Option<String>,
     set_temperature: Option<bool>,
     language: Option<String>,
+    permissions: Option<Permissions>,
 }
 
 /// Built-in filter rules (spec 03): lockfiles / minified artifacts / CI directories
@@ -162,6 +395,11 @@ impl Config {
     /// field, using the provider default)
     pub fn temp(&self, t: f64) -> Option<f64> {
         self.set_temperature.then_some(t)
+    }
+
+    /// Permission evaluator for the current run, seeded with the loaded config.
+    pub fn permissions_evaluator(&self) -> PermissionsEvaluator {
+        PermissionsEvaluator::new(self.permissions.clone())
     }
 
     pub fn load() -> anyhow::Result<Config> {
@@ -257,6 +495,23 @@ impl Config {
             .filter(|v| !v.is_empty())
             .map(SecretString::from);
 
+        // Fine-grained permissions (spec 12): toml > defaults
+        let mut permissions = t.permissions.unwrap_or_default();
+        // Empty lists fall back to defaults (spec 12 §6.3)
+        if permissions.auto_review.is_empty() {
+            permissions.auto_review = default_auto_review();
+        }
+        if permissions.review.is_empty() {
+            permissions.review = default_review();
+        }
+        if permissions.develop.is_empty() {
+            permissions.develop = default_develop();
+        }
+        if permissions.merge.is_empty() {
+            permissions.merge = default_merge();
+        }
+        permissions.validate()?;
+
         Ok(Config {
             model,
             reformat_model,
@@ -280,6 +535,7 @@ impl Config {
             gh_pat,
             llm,
             workspace,
+            permissions,
         })
     }
 }
@@ -352,5 +608,146 @@ mod tests {
     #[test]
     fn unknown_fields_rejected() {
         assert!(merge_str("unknown_key = 1").is_err());
+    }
+
+    #[test]
+    fn permissions_unknown_fields_rejected() {
+        assert!(merge_str("[permissions]\nunknown_key = 1").is_err());
+    }
+
+    #[test]
+    fn permissions_defaults_match_current_behavior() {
+        let c = merge_str("").unwrap();
+        assert_eq!(c.permissions.auto_review, vec!["anyone"]);
+        assert_eq!(c.permissions.review, vec!["collaborator"]);
+        assert_eq!(c.permissions.develop, vec!["collaborator"]);
+        assert_eq!(c.permissions.merge, vec!["write"]);
+    }
+
+    #[test]
+    fn permissions_toml_overrides() {
+        let c = merge_str(
+            r#"[permissions]
+auto_review = ["owner"]
+review = ["member", "@alice"]
+develop = ["@org/team"]
+merge = ["admin", "maintain"]"#,
+        )
+        .unwrap();
+        assert_eq!(c.permissions.auto_review, vec!["owner"]);
+        assert_eq!(c.permissions.review, vec!["member", "@alice"]);
+        assert_eq!(c.permissions.develop, vec!["@org/team"]);
+        assert_eq!(c.permissions.merge, vec!["admin", "maintain"]);
+    }
+
+    #[test]
+    fn permissions_empty_list_falls_back_to_default() {
+        let c = merge_str("[permissions]\nreview = []").unwrap();
+        assert_eq!(c.permissions.review, vec!["collaborator"]);
+    }
+
+    #[test]
+    fn permissions_invalid_entries_rejected() {
+        assert!(
+            merge_str(
+                r#"[permissions]
+review = ["everyone"]"#,
+            )
+            .is_err()
+        );
+        assert!(
+            merge_str(
+                r#"[permissions]
+review = ["@foo/bar/baz"]"#,
+            )
+            .is_err()
+        );
+        assert!(
+            merge_str(
+                r#"[permissions]
+review = ["@"]"#,
+            )
+            .is_err()
+        );
+        assert!(
+            merge_str(
+                r#"[permissions]
+review = ["@/team"]"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn permissions_association_matrix() {
+        use crate::github::Repo;
+        let perms = Permissions {
+            auto_review: vec!["anyone".into()],
+            review: vec!["collaborator".into()],
+            develop: vec!["member".into()],
+            merge: vec!["owner".into()],
+        };
+        let evaluator = PermissionsEvaluator::new(perms);
+        let gh = crate::github::GitHubClient::new(None).unwrap(); // no real calls needed
+        let repo = Repo::parse("o/r").unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        let check = |login, assoc, key| {
+            rt.block_on(evaluator.evaluate(
+                key,
+                &gh,
+                &repo,
+                Actor {
+                    login,
+                    author_association: assoc,
+                },
+            ))
+        };
+
+        assert!(check("x", "NONE", PermissionKey::AutoReview));
+        assert!(check("x", "OWNER", PermissionKey::Review));
+        assert!(check("x", "MEMBER", PermissionKey::Review));
+        assert!(check("x", "COLLABORATOR", PermissionKey::Review));
+        assert!(!check("x", "CONTRIBUTOR", PermissionKey::Review));
+        assert!(check("x", "MEMBER", PermissionKey::Develop));
+        assert!(check("x", "OWNER", PermissionKey::Develop));
+        assert!(!check("x", "COLLABORATOR", PermissionKey::Develop));
+        assert!(check("x", "OWNER", PermissionKey::Merge));
+        assert!(!check("x", "MEMBER", PermissionKey::Merge));
+    }
+
+    #[test]
+    fn permissions_user_entry_is_case_insensitive() {
+        use crate::github::Repo;
+        let perms = Permissions {
+            auto_review: vec!["anyone".into()],
+            review: vec!["@Alice".into()],
+            develop: vec!["collaborator".into()],
+            merge: vec!["write".into()],
+        };
+        let evaluator = PermissionsEvaluator::new(perms);
+        let gh = crate::github::GitHubClient::new(None).unwrap();
+        let repo = Repo::parse("o/r").unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let hit = rt.block_on(evaluator.evaluate(
+            PermissionKey::Review,
+            &gh,
+            &repo,
+            Actor {
+                login: "alice",
+                author_association: "NONE",
+            },
+        ));
+        assert!(hit);
+        let miss = rt.block_on(evaluator.evaluate(
+            PermissionKey::Review,
+            &gh,
+            &repo,
+            Actor {
+                login: "bob",
+                author_association: "OWNER",
+            },
+        ));
+        assert!(!miss);
     }
 }

@@ -12,11 +12,12 @@ use serde::{Deserialize, Serialize};
 use crate::agent::rig_backend::RigBackend;
 use crate::agent::tools::ToolShared;
 use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
-use crate::config::Config;
+use crate::config::{Actor, Config, PermissionKey};
 use crate::develop::{self};
 use crate::event::{DevEvent, DevKind};
 use crate::git::GitRepo;
 use crate::github::{GitHubClient, IssueComment, PullRequest, Repo};
+use crate::i18n::T;
 use crate::mention::strip_code_blocks;
 
 /// Hidden state marker embedded in bot comments: `<!-- hoverstare-dev:{json} -->`.
@@ -109,12 +110,6 @@ pub fn slug(title: &str) -> String {
 
 /// Entry point for develop-mode events (spec 11 §3).
 pub async fn run_event(cfg: &Config, ev: &DevEvent) -> anyhow::Result<String> {
-    if !ev.is_collaborator() && !ev.is_self_trigger() {
-        return Ok(format!(
-            "ignored: author association {} is not a collaborator",
-            ev.author_association
-        ));
-    }
     let repo = Repo::parse(&ev.repo).map_err(|e| anyhow::anyhow!("{e}"))?;
     let gh = GitHubClient::new(cfg.github_token.clone())?;
     let Some(cmd) = parse_dev_command(&ev.body) else {
@@ -130,6 +125,36 @@ pub async fn run_event(cfg: &Config, ev: &DevEvent) -> anyhow::Result<String> {
         .await?;
         return Ok("help replied".to_string());
     }
+
+    // Permission gate (spec 12): help is always allowed; self-trigger is always
+    // allowed (spec 11 §6); everything else is checked against the configured key.
+    if !ev.is_self_trigger() {
+        let key = match cmd {
+            DevCommand::Merge => PermissionKey::Merge,
+            _ => PermissionKey::Develop,
+        };
+        let evaluator = cfg.permissions_evaluator();
+        let actor = Actor {
+            login: &ev.author,
+            author_association: &ev.author_association,
+        };
+        if !evaluator.evaluate(key, &gh, &repo, actor).await {
+            let t = T::new(cfg.language);
+            let _ = gh
+                .create_issue_comment(&repo, ev.number, t.permission_denied())
+                .await;
+            if let Some(cid) = ev.comment_id {
+                let _ = gh
+                    .create_reaction_for_comment(&repo, cid, ev.in_reply_to, "eyes")
+                    .await;
+            }
+            return Ok(format!(
+                "permission denied: author {} does not meet {:?} requirements",
+                ev.author, key
+            ));
+        }
+    }
+
     match (ev.kind, ev.is_pr) {
         (DevKind::IssueOpened, _) | (DevKind::IssueComment, false) => {
             issue_flow(cfg, &gh, &repo, ev, cmd).await

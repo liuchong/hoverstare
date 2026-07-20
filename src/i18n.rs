@@ -351,6 +351,21 @@ impl T {
         }
     }
 
+    pub fn permission_denied(&self) -> &'static str {
+        match self.0 {
+            Lang::En => "Permission denied: you do not meet the requirements for this command.",
+            Lang::ZhCn => "权限不足：你未满足当前命令的权限要求。",
+            Lang::Ru => "Недостаточно прав: вы не соответствуете требованиям этой команды.",
+            Lang::Fr => {
+                "Permission refusée : vous ne remplissez pas les conditions pour cette commande."
+            }
+            Lang::De => {
+                "Berechtigung verweigert: Sie erfüllen nicht die Anforderungen für diesen Befehl."
+            }
+            Lang::Es => "Permiso denegado: no cumples los requisitos para este comando.",
+        }
+    }
+
     // ------------------------------------------------------------------
     // Status checks (orchestrator.rs)
     // ------------------------------------------------------------------
