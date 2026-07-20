@@ -55,6 +55,9 @@ pub struct PullRequest {
     #[serde(default)]
     pub draft: bool,
     pub user: PrUser,
+    /// PR author's association with the repo (used by the permissions system, spec 12)
+    #[serde(default)]
+    pub author_association: Option<String>,
     /// "open" | "closed" (develop mode, spec 11)
     #[serde(default)]
     pub state: Option<String>,
@@ -81,6 +84,28 @@ pub struct PrRepo {
 #[derive(Debug, Deserialize)]
 pub struct PrUser {
     pub login: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RepoPermission {
+    Read = 1,
+    Triage = 2,
+    Write = 3,
+    Maintain = 4,
+    Admin = 5,
+}
+
+impl RepoPermission {
+    pub fn parse(s: &str) -> Option<RepoPermission> {
+        match s.to_ascii_lowercase().as_str() {
+            "read" => Some(RepoPermission::Read),
+            "triage" => Some(RepoPermission::Triage),
+            "write" => Some(RepoPermission::Write),
+            "maintain" => Some(RepoPermission::Maintain),
+            "admin" => Some(RepoPermission::Admin),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -467,23 +492,24 @@ impl GitHubClient {
         Ok(())
     }
 
-    /// Add a reaction to a comment (spec 09): 🚀 accepted / ✅ done / ❌ failed / 👀 read
-    pub async fn create_reaction(
+    /// Add a reaction to a comment by raw ids (issues/comments or pulls/comments).
+    pub async fn create_reaction_for_comment(
         &self,
         repo: &Repo,
-        ev: &crate::event::MentionEvent,
+        comment_id: u64,
+        in_reply_to: Option<u64>,
         content: &str,
     ) -> Result<(), GitHubError> {
         // issue comments and review thread comments use different endpoints
-        let base = if ev.in_reply_to_id().is_some() {
+        let base = if in_reply_to.is_some() {
             format!(
                 "{}/repos/{}/{}/pulls/comments/{}/reactions",
-                self.api, repo.owner, repo.name, ev.comment_id
+                self.api, repo.owner, repo.name, comment_id
             )
         } else {
             format!(
                 "{}/repos/{}/{}/issues/comments/{}/reactions",
-                self.api, repo.owner, repo.name, ev.comment_id
+                self.api, repo.owner, repo.name, comment_id
             )
         };
         let payload = serde_json::json!({ "content": content });
@@ -492,6 +518,17 @@ impl GitHubClient {
             .await?;
         Self::error_for_status(resp).await?;
         Ok(())
+    }
+
+    /// Add a reaction to a mention event comment (spec 09).
+    pub async fn create_reaction(
+        &self,
+        repo: &Repo,
+        ev: &crate::event::MentionEvent,
+        content: &str,
+    ) -> Result<(), GitHubError> {
+        self.create_reaction_for_comment(repo, ev.comment_id, ev.in_reply_to, content)
+            .await
     }
 
     /// Fetch the body of a review thread comment (context for the explain command)
