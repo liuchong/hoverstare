@@ -464,7 +464,8 @@ async fn resolve_or_reply(
         Err(e) => {
             let Some(cid) = comment_id else {
                 tracing::warn!(
-                    "failed to resolve thread {thread_id} and no comment id available for fallback: {e}"
+                    "failed to resolve thread {thread_id} and no comment id \
+                     available for fallback: {e}"
                 );
                 return ResolveOutcome::Failed;
             };
@@ -623,7 +624,8 @@ pub async fn analyze(
     let st = &outcome.stats;
     if st.passes_run > 1 || st.clusters > 0 {
         tracing::info!(
-            "pipeline stats: {} pass(es), {} cluster(s), {} voted in, {} verified in, {} dropped (findings per pass: {:?})",
+            "pipeline stats: {} pass(es), {} cluster(s), {} voted in, {} verified \
+             in, {} dropped (findings per pass: {:?})",
             st.passes_run,
             st.clusters,
             st.voted_in,

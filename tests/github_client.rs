@@ -307,6 +307,7 @@ async fn reactions_use_correct_endpoints() {
         comment_id: 11,
         body: "@hoverstare review".into(),
         author_association: "OWNER".into(),
+        author: "u".into(),
         in_reply_to: None,
     };
     gh.create_reaction(&repo(), &ev_issue, "rocket")

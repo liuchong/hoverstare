@@ -576,12 +576,7 @@ impl GitHubClient {
 
     /// Check whether a user is an active member of an org team (spec 12).
     /// Treats any API error (including non-org repos) as "not a member".
-    pub async fn check_team_membership(
-        &self,
-        org: &str,
-        team: &str,
-        login: &str,
-    ) -> bool {
+    pub async fn check_team_membership(&self, org: &str, team: &str, login: &str) -> bool {
         let url = format!(
             "{}/orgs/{org}/teams/{team}/memberships/{login}",
             self.api
