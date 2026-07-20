@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use hoverstare::config::Config;
 use hoverstare::github::{GitHubClient, GitHubError, NewReview, Repo};
 use httpmock::prelude::*;
 
@@ -519,4 +520,69 @@ async fn no_status_check_when_disabled() {
         hoverstare::orchestrator::Outcome::Skipped(_)
     ));
     status_mock.assert_calls_async(0).await;
+}
+
+// ---------------------------------------------------------------------------
+// M14：细粒度权限系统（spec 12）
+// ---------------------------------------------------------------------------
+
+/// merge 命令权限不足：返回说明 + 👀 reaction，不调用后续流程（无 LLM / 无合并）
+#[tokio::test]
+async fn merge_permission_denied_reacts_and_skips() {
+    let _guard = ENV_LOCK.lock().await;
+    let server = MockServer::start_async().await;
+
+    // 协作者权限 API 返回 triage（低于默认 merge 要求的 write）
+    server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/repos/o/r/collaborators/dev/permission");
+            then.status(200)
+                .json_body(serde_json::json!({"permission": "triage"}));
+        })
+        .await;
+
+    let comment_mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/repos/o/r/issues/1/comments")
+                .body_includes("Permission denied");
+            then.status(200)
+                .json_body(serde_json::json!({"id": 99}));
+        })
+        .await;
+    let reaction_mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/repos/o/r/issues/comments/11/reactions")
+                .body_includes(r#""content":"eyes""#);
+            then.status(200)
+                .json_body(serde_json::json!({"id": 100}));
+        })
+        .await;
+
+    unsafe {
+        std::env::set_var("GITHUB_API_URL", server.base_url());
+        std::env::set_var("OPENAI_API_KEY", "test");
+    }
+
+    let cfg = Config::load().unwrap();
+    let ev = hoverstare::event::DevEvent {
+        repo: "o/r".into(),
+        number: 1,
+        is_pr: true,
+        kind: hoverstare::event::DevKind::IssueComment,
+        title: None,
+        body: "@hoverstare merge".into(),
+        comment_id: Some(11),
+        author_association: "MEMBER".into(),
+        in_reply_to: None,
+        author: "dev".into(),
+    };
+
+    let result = hoverstare::devagent::run_event(&cfg, &ev).await.unwrap();
+    assert!(result.contains("permission denied"), "actual: {result}");
+
+    comment_mock.assert_async().await;
+    reaction_mock.assert_async().await;
 }
