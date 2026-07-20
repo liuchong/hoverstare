@@ -764,6 +764,19 @@ impl GitHubClient {
         Ok(page.check_runs)
     }
 
+    /// Delete a branch (best-effort; spec 11 §6: after a successful merge).
+    pub async fn delete_branch(&self, repo: &Repo, branch: &str) -> Result<(), GitHubError> {
+        let url = format!(
+            "{}/repos/{}/{}/git/refs/heads/{branch}",
+            self.api, repo.owner, repo.name
+        );
+        let resp = self
+            .send(|| self.request(reqwest::Method::DELETE, &url))
+            .await?;
+        Self::error_for_status(resp).await?;
+        Ok(())
+    }
+
     pub async fn get_repo_meta(&self, repo: &Repo) -> Result<RepoMeta, GitHubError> {
         let url = format!("{}/repos/{}/{}", self.api, repo.owner, repo.name);
         let resp = self

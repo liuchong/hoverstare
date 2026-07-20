@@ -219,7 +219,7 @@ HoverStare kann auch *entwickeln* — Issues und PRs werden zu einer dialoggeste
 **PR-Hauptlinie** — auf jedem PR dieses Repos:
 
 - `@hoverstare <Anweisung>` — es checkt den PR-Branch aus, entwickelt, committet (Conventional Commits, Autor `hoverstare[bot]`), pusht zurück auf den Branch und berichtet per Kommentar. Runden, die ihr Budget ausschöpfen, setzen sich selbst fort (max. 10 Runden pro PR).
-- `@hoverstare merge` — sobald die Checks grün sind und keine Konflikte bestehen, mergt es per Squash.
+- `@hoverstare merge` — sobald die Checks grün sind und keine Konflikte bestehen, mergt es per Squash und löscht den Quell-Branch.
 
 Einrichtung: füge die Trigger `issues` und `pull_request_review` hinzu und vergib `contents: write` + `issues: write`. Vollständiges Beispiel: `.github/workflows/hoverstare.yml`. Hinweise:
 

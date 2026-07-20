@@ -217,7 +217,7 @@ HoverStare también puede *desarrollar* — los issues y PRs se convierten en un
 **Línea de PR** — en cualquier PR de este repo:
 
 - `@hoverstare <instrucción>` — cambia a la rama del PR, desarrolla, hace commit (Conventional Commits, autor `hoverstare[bot]`), empuja de vuelta a la rama y reporta en un comentario. Las rondas que agotan el presupuesto se autocontinúan (máx. 10 rondas por PR).
-- `@hoverstare merge` — cuando los checks están en verde y no hay conflictos, fusiona con squash.
+- `@hoverstare merge` — cuando los checks están en verde y no hay conflictos, fusiona con squash y elimina la rama de origen.
 
 Configuración: añade los disparadores `issues` y `pull_request_review` y concede `contents: write` + `issues: write`. Ejemplo completo en `.github/workflows/hoverstare.yml`. Notas:
 

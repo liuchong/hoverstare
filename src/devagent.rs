@@ -498,9 +498,21 @@ async fn merge_flow(
         return Ok(format!("checks not green: {}", not_green.join(", ")));
     }
     let sha = gh.merge_pull_request(repo, ev.number).await?;
-    gh.create_issue_comment(repo, ev.number, &format!("✅ 已合并（squash）：`{sha}`"))
-        .await?;
-    Ok(format!("merged: {sha}"))
+    // Delete the merged source branch (spec 11 §6); failure only warns.
+    let branch_note = match gh.delete_branch(repo, &pr.head.ref_name).await {
+        Ok(()) => format!("，源分支 `{}` 已删除", pr.head.ref_name),
+        Err(e) => format!("（警告：源分支删除失败：{e}）"),
+    };
+    gh.create_issue_comment(
+        repo,
+        ev.number,
+        &format!("✅ 已合并（squash）：`{sha}`{branch_note}"),
+    )
+    .await?;
+    Ok(format!(
+        "merged: {sha}; branch deleted: {}",
+        pr.head.ref_name
+    ))
 }
 
 // ---------------------------------------------------------------------------

@@ -222,7 +222,7 @@ development environment (spec 11):
   branch, and reports in a comment. Rounds that exhaust their budget
   self-continue (max 10 rounds per PR).
 - `@hoverstare merge` — once checks are green and there are no conflicts, it
-  squash-merges.
+  squash-merges and deletes the source branch.
 
 Setup: add the `issues` and `pull_request_review` triggers and grant
 `contents: write` + `issues: write`. See `.github/workflows/hoverstare.yml`

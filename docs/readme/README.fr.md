@@ -218,7 +218,7 @@ HoverStare sait aussi *développer* — les issues et PR deviennent un environne
 **Voie PR** — sur toute PR de ce dépôt :
 
 - `@hoverstare <instruction>` — il bascule sur la branche de la PR, développe, committe (Conventional Commits, auteur `hoverstare[bot]`), pousse sur la branche et rend compte en commentaire. Les tours qui épuisent leur budget se relancent automatiquement (10 tours max par PR).
-- `@hoverstare merge` — une fois les checks verts et sans conflit, il fusionne en squash.
+- `@hoverstare merge` — une fois les checks verts et sans conflit, il fusionne en squash et supprime la branche source.
 
 Configuration : ajoutez les déclencheurs `issues` et `pull_request_review` et accordez `contents: write` + `issues: write`. Exemple complet dans `.github/workflows/hoverstare.yml`. Remarques :
 
