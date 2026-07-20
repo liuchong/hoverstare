@@ -28,7 +28,8 @@ concurrency:
   group: >-
     hoverstare-${{
       ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment')
-        && !contains(github.event.comment.body, '@hoverstare')
+        && !(contains(github.event.comment.body, '@hoverstare')
+          && (github.event.comment.user.login != 'hoverstare[bot]' || startsWith(github.event.comment.body, '@hoverstare continue')))
         && format('noop-{0}', github.event.comment.id))
       || (github.event_name == 'pull_request_review'
         && !contains(github.event.review.body, '@hoverstare')
