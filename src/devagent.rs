@@ -65,6 +65,8 @@ pub enum DevCommand {
     Go,
     /// `@hoverstare merge` (PR only)
     Merge,
+    /// `@hoverstare help` or `@hoverstare /help`: print unified help
+    Help,
     /// Everything else: discussion (issue) or dev instruction (PR)
     Task(String),
 }
@@ -77,6 +79,7 @@ pub fn parse_dev_command(body: &str) -> Option<DevCommand> {
     Some(match first.as_str() {
         "go" => DevCommand::Go,
         "merge" => DevCommand::Merge,
+        "help" | "/help" => DevCommand::Help,
         _ => DevCommand::Task(after.to_string()),
     })
 }
@@ -117,6 +120,16 @@ pub async fn run_event(cfg: &Config, ev: &DevEvent) -> anyhow::Result<String> {
     let Some(cmd) = parse_dev_command(&ev.body) else {
         return Ok("ignored: no @hoverstare command".to_string());
     };
+    if cmd == DevCommand::Help {
+        // Unified help works everywhere (spec 09): issues and PRs alike.
+        gh.create_issue_comment(
+            &repo,
+            ev.number,
+            &crate::i18n::T::new(cfg.language).help_text(),
+        )
+        .await?;
+        return Ok("help replied".to_string());
+    }
     match (ev.kind, ev.is_pr) {
         (DevKind::IssueOpened, _) | (DevKind::IssueComment, false) => {
             issue_flow(cfg, &gh, &repo, ev, cmd).await
@@ -140,6 +153,7 @@ async fn issue_flow(
     let marker = latest_marker(&comments);
     match cmd {
         DevCommand::Merge => Ok("ignored: merge is only valid on PRs".to_string()),
+        DevCommand::Help => unreachable!("handled in run_event"),
         DevCommand::Go => implement_issue(cfg, gh, repo, ev, &comments, marker).await,
         DevCommand::Task(text) => {
             if let Some(m) = &marker
@@ -355,6 +369,7 @@ async fn pr_flow(
     }
     match cmd {
         DevCommand::Merge => merge_flow(cfg, gh, repo, ev, &pr).await,
+        DevCommand::Help => unreachable!("handled in run_event"),
         DevCommand::Go => pr_dev_round(cfg, gh, repo, ev, &pr, "continue the current task").await,
         DevCommand::Task(text) => pr_dev_round(cfg, gh, repo, ev, &pr, &text).await,
     }
@@ -597,6 +612,14 @@ mod tests {
         );
         assert_eq!(parse_dev_command("no mention"), None);
         assert_eq!(parse_dev_command("```\n@hoverstare go\n```"), None);
+        assert_eq!(
+            parse_dev_command("@hoverstare help"),
+            Some(DevCommand::Help)
+        );
+        assert_eq!(
+            parse_dev_command("@hoverstare /help"),
+            Some(DevCommand::Help)
+        );
     }
 
     #[test]
