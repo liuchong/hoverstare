@@ -353,6 +353,22 @@ fn actor_association_matches_one_of(association: &str, expected: &[&str]) -> boo
     expected.iter().any(|e| association.eq_ignore_ascii_case(e))
 }
 
+/// Read a `HOVERSTARE_PERMISSIONS_<KEY>` environment override.
+/// Comma-separated values are trimmed; an empty value is treated as unset.
+fn env_permission_entries(key: PermissionKey) -> Option<Vec<String>> {
+    let var = format!("HOVERSTARE_PERMISSIONS_{}", key.as_str().to_ascii_uppercase());
+    std::env::var(&var)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect()
+        })
+}
+
 /// File structure of `.github/hoverstare.toml` (all optional)
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -497,8 +513,20 @@ impl Config {
             .filter(|v| !v.is_empty())
             .map(SecretString::from);
 
-        // Fine-grained permissions (spec 12): toml > defaults
+        // Fine-grained permissions (spec 12): env > toml > defaults
         let mut permissions = t.permissions.unwrap_or_default();
+        if let Some(entries) = env_permission_entries(PermissionKey::AutoReview) {
+            permissions.auto_review = entries;
+        }
+        if let Some(entries) = env_permission_entries(PermissionKey::Review) {
+            permissions.review = entries;
+        }
+        if let Some(entries) = env_permission_entries(PermissionKey::Develop) {
+            permissions.develop = entries;
+        }
+        if let Some(entries) = env_permission_entries(PermissionKey::Merge) {
+            permissions.merge = entries;
+        }
         // Empty lists fall back to defaults (spec 12 §6.3)
         if permissions.auto_review.is_empty() {
             permissions.auto_review = default_auto_review();
@@ -751,5 +779,27 @@ review = ["@/team"]"#,
             },
         ));
         assert!(!miss);
+    }
+
+    #[test]
+    fn permissions_env_overrides_toml() {
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "test-key");
+            std::env::set_var("HOVERSTARE_PERMISSIONS_REVIEW", "owner, @alice");
+            std::env::set_var("HOVERSTARE_PERMISSIONS_MERGE", "admin");
+        }
+        let c = merge_str(
+            r#"[permissions]
+review = ["member"]
+develop = ["@bob"]"#,
+        )
+        .unwrap();
+        assert_eq!(c.permissions.review, vec!["owner", "@alice"]);
+        assert_eq!(c.permissions.develop, vec!["@bob"]);
+        assert_eq!(c.permissions.merge, vec!["admin"]);
+        unsafe {
+            std::env::remove_var("HOVERSTARE_PERMISSIONS_REVIEW");
+            std::env::remove_var("HOVERSTARE_PERMISSIONS_MERGE");
+        }
     }
 }
