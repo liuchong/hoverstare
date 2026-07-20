@@ -39,6 +39,10 @@ pub struct Config {
     /// Output language (HOVERSTARE_LANGUAGE env > toml language > default en)
     pub language: crate::i18n::Lang,
     pub github_token: Option<SecretString>,
+    /// Classic PAT with a **narrow duty** (spec 07/11): resolveReviewThread
+    /// fallback and dev-mode git push. Never used as the API identity —
+    /// comments/reviews always go through `github_token` (App token).
+    pub gh_pat: Option<SecretString>,
     pub llm: LlmCredentials,
     /// M3 (tool sandbox root)
     pub workspace: PathBuf,
@@ -241,11 +245,16 @@ impl Config {
             ),
         };
 
-        // GH_PAT takes precedence (GraphQL resolveReviewThread is only reliable with a classic PAT, spec 07)
-        let github_token = std::env::var("GH_PAT")
+        // Identity token (comments/reviews/API): GITHUB_TOKEN only (App token in Actions).
+        let github_token = std::env::var("GITHUB_TOKEN")
             .ok()
             .filter(|v| !v.is_empty())
-            .or_else(|| std::env::var("GITHUB_TOKEN").ok().filter(|v| !v.is_empty()))
+            .map(SecretString::from);
+        // GH_PAT no longer hijacks the identity (spec 07/11): it only serves
+        // resolveReviewThread fallback and dev-mode pushes.
+        let gh_pat = std::env::var("GH_PAT")
+            .ok()
+            .filter(|v| !v.is_empty())
             .map(SecretString::from);
 
         Ok(Config {
@@ -268,6 +277,7 @@ impl Config {
                 t.language.as_deref(),
             ),
             github_token,
+            gh_pat,
             llm,
             workspace,
         })
@@ -277,6 +287,24 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret as _;
+
+    #[test]
+    fn gh_pat_does_not_hijack_identity() {
+        // spec 07/11: GH_PAT is narrow-duty (resolve/push); identity stays GITHUB_TOKEN.
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "k");
+            std::env::set_var("GITHUB_TOKEN", "identity-tok");
+            std::env::set_var("GH_PAT", "pat-tok");
+        }
+        let cfg = merge_str("").unwrap();
+        assert_eq!(cfg.github_token.unwrap().expose_secret(), "identity-tok");
+        assert_eq!(cfg.gh_pat.unwrap().expose_secret(), "pat-tok");
+        unsafe {
+            std::env::remove_var("GH_PAT");
+            std::env::remove_var("GITHUB_TOKEN");
+        }
+    }
 
     fn merge_str(toml: &str) -> anyhow::Result<Config> {
         unsafe { std::env::set_var("OPENAI_API_KEY", "test-key") };

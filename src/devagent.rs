@@ -532,11 +532,15 @@ fn render_thread(title: &str, body: &str, comments: &[IssueComment]) -> String {
     out
 }
 
-/// Token for git push (spec 11 §3.3): dev PAT > GH_PAT > the API token.
-/// PAT-class tokens trigger CI on push; the fallback may not.
+/// Token for git push (spec 11 §3.3): HOVERSTARE_DEV_TOKEN > gh_pat >
+/// the identity token. PAT-class tokens trigger CI on push; the App token
+/// needs `contents: write` to work at all.
 fn dev_token(cfg: &Config) -> secrecy::SecretString {
-    if let Ok(t) = std::env::var("HOVERSTARE_DEV_TOKEN").or_else(|_| std::env::var("GH_PAT")) {
+    if let Ok(t) = std::env::var("HOVERSTARE_DEV_TOKEN") {
         return t.into();
+    }
+    if let Some(pat) = &cfg.gh_pat {
+        return pat.clone();
     }
     cfg.github_token.clone().unwrap_or_default()
 }

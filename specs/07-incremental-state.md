@@ -55,10 +55,12 @@ pub fn fingerprint(file: &str, line_content: &str, title: &str) -> String
    `resolveReviewThread` 常返回 "Resource not accessible by integration"，即使
    有 `pull-requests: write`）——resolve 失败时降级为**线程内回复**
    "✅ HoverStare 已确认修复"（REST replies 端点，默认 token 可用）。
-   完整 resolve 的两条路径（凭据优先级 GH_PAT > GITHUB_TOKEN，spec 01）：
-   ① `GH_PAT`（classic PAT，`repo` scope）；② **HoverStare GitHub App**
-   （action 输入 `app_id`/`app_private_key`，spec 08）——App installation token
-   不受该平台限制，是推荐的品牌身份方案。
+   完整 resolve 的两条路径：① **HoverStare GitHub App**（action 输入
+   `app_id`/`app_private_key`，spec 08）——App installation token 不受该平台
+   限制，是推荐的品牌身份方案；② `GH_PAT`（classic PAT，`repo` scope），
+   作为无 App 时的 resolve 专用 fallback。**凭据职责分离**：`GH_PAT` 仅用于
+   resolveReviewThread 与开发模式 git push（spec 11），绝不作为 API 身份
+   （评论/review 永远走 `GITHUB_TOKEN`/`App token`），避免 bot 以人类身份发言。
 
 ## 不重复评论
 

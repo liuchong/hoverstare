@@ -134,6 +134,12 @@ pub async fn run_review(
     let pr_ref = event::resolve_pr(args)?;
     let repo = Repo::parse(&pr_ref.repo).map_err(|e| anyhow::anyhow!("{e}"))?;
     let gh = GitHubClient::new(cfg.github_token.clone())?;
+    // resolveReviewThread with the narrow-duty PAT when present (spec 07);
+    // otherwise the identity client (App token already works for resolve).
+    let resolve_gh = match &cfg.gh_pat {
+        Some(pat) => GitHubClient::new(Some(pat.clone()))?,
+        None => gh.clone(),
+    };
 
     tracing::info!("target PR: {} #{}", repo.full_name(), pr_ref.number);
     gha_group("preparation (PR / diff / incremental check)");
@@ -384,7 +390,7 @@ pub async fn run_review(
             .iter()
             .find(|t| &t.thread_id == tid)
             .and_then(|t| t.first_comment_id);
-        match resolve_or_reply(&gh, &repo, pr_ref.number, tid, comment_id).await {
+        match resolve_or_reply(&resolve_gh, &repo, pr_ref.number, tid, comment_id).await {
             ResolveOutcome::Resolved => resolved_count += 1,
             ResolveOutcome::Replied => replied_count += 1,
             ResolveOutcome::Failed => {}
