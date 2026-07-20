@@ -286,7 +286,7 @@ impl PermissionsEvaluator {
         &self,
         entry: &str,
         gh: &crate::github::GitHubClient,
-        repo: &crate::github::Repo,
+        _repo: &crate::github::Repo,
         actor: Actor<'_>,
     ) -> bool {
         let e = entry.trim().to_ascii_lowercase();
