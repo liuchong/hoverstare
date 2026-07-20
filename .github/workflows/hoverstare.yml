@@ -34,6 +34,10 @@ concurrency:
       || (github.event_name == 'pull_request_review'
         && !contains(github.event.review.body, '@hoverstare')
         && format('noop-review-{0}', github.event.review.id))
+      # 开发轮（dev 触发的评论/review）与自动审查分属两个组，互不取消；
+      # dev 轮次之间仍串行
+      || ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review')
+        && format('dev-{0}', github.event.issue.number || github.event.pull_request.number))
       || (github.event.pull_request.number || github.event.issue.number)
     }}
   cancel-in-progress: true
