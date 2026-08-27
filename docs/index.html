@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HoverStare - Repo-aware AI code review</title>
+    <meta
+      name="description"
+      content="HoverStare is a repo-aware AI code review bot for GitHub pull requests, shipped as a Rust-powered GitHub Action."
+    >
+    <meta name="theme-color" content="#1a7f37">
+    <meta property="og:title" content="HoverStare">
+    <meta
+      property="og:description"
+      content="AI code review that reads your repo before it comments."
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://liuchong.github.io/hoverstare/pages/logo.svg">
+    <link rel="icon" href="pages/logo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="pages/styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="HoverStare home">
+        <img src="pages/logo.svg" width="36" height="36" alt="">
+        <span>HoverStare</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="#why">Why</a>
+        <a href="#quickstart">Quick start</a>
+        <a href="#docs">Docs</a>
+        <a href="https://github.com/liuchong/hoverstare">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">GitHub Action / Rust / BYOK</p>
+          <h1>AI code review that actually reads your repo.</h1>
+          <p class="lede">
+            HoverStare reviews pull requests with repository context, read-only
+            investigation tools, multi-pass voting, and precise inline comments
+            that keep tracking findings across commits.
+          </p>
+          <div class="hero-actions" role="group" aria-label="Primary actions">
+            <a class="button primary" href="#quickstart">Add to a repo</a>
+            <a class="button secondary" href="https://github.com/liuchong/hoverstare">View source</a>
+          </div>
+        </div>
+        <aside class="hero-panel" aria-label="Review flow preview">
+          <div class="panel-top">
+            <img src="pages/logo.svg" width="72" height="72" alt="">
+            <div>
+              <p class="panel-kicker">Reviewer loop</p>
+              <h2>Open context, vote, verify, comment.</h2>
+            </div>
+          </div>
+          <ol class="review-flow">
+            <li><span>1</span>Fetch PR diff and base branch context</li>
+            <li><span>2</span>Run parallel review passes with read-only tools</li>
+            <li><span>3</span>Cluster votes and verify low-confidence findings</li>
+            <li><span>4</span>Anchor inline comments and resolve fixed threads</li>
+          </ol>
+        </aside>
+      </section>
+
+      <section id="why" class="section">
+        <div class="section-heading">
+          <p class="eyebrow">Signal first</p>
+          <h2>Built for reviews that need the rest of the codebase.</h2>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <h3>Repo-aware, not diff-only</h3>
+            <p>
+              The reviewing model can inspect files, grep call sites, and compare
+              against the base branch before it reports a defect.
+            </p>
+          </article>
+          <article>
+            <h3>Voting plus verification</h3>
+            <p>
+              Independent passes look for correctness, concurrency, and security
+              issues, then a verifier checks lonely findings before publication.
+            </p>
+          </article>
+          <article>
+            <h3>Precise inline comments</h3>
+            <p>
+              Reported line numbers are validated against the real diff and
+              snapped to a valid anchor so comments land where reviewers expect.
+            </p>
+          </article>
+          <article>
+            <h3>Incremental by design</h3>
+            <p>
+              Hidden fingerprints follow findings across pushes, letting
+              HoverStare review the delta and mark fixed issues without repeats.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="metric">
+          <strong>Fail-open</strong>
+          <span>Analysis trouble should not block CI.</span>
+        </div>
+        <div class="metric">
+          <strong>BYOK</strong>
+          <span>Use Anthropic or an OpenAI-compatible endpoint.</span>
+        </div>
+        <div class="metric">
+          <strong>Stateless</strong>
+          <span>Review state lives in GitHub comments and metadata.</span>
+        </div>
+      </section>
+
+      <section id="quickstart" class="section split">
+        <div class="section-heading">
+          <p class="eyebrow">Two minutes</p>
+          <h2>Add HoverStare to a repository.</h2>
+          <p>
+            Create `.github/workflows/hoverstare.yml`, add an LLM key as a
+            repository secret, and let pull requests trigger reviews.
+          </p>
+        </div>
+        <div class="code-card">
+          <div class="code-toolbar">
+            <span>.github/workflows/hoverstare.yml</span>
+            <button class="copy-button" type="button" data-copy="#workflow-code">
+              Copy
+            </button>
+          </div>
+          <pre><code id="workflow-code">name: HoverStare
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  hoverstare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: liuchong/hoverstare@v0.0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.HOVERSTARE_LLM_KEY }}
+          OPENAI_BASE_URL: ${{ vars.HOVERSTARE_LLM_BASE_URL }}
+          HOVERSTARE_MODEL: ${{ vars.HOVERSTARE_MODEL }}</code></pre>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-heading">
+          <p class="eyebrow">Commands</p>
+          <h2>Talk to it in the PR.</h2>
+        </div>
+        <div class="command-list">
+          <div>
+            <code>@hoverstare review</code>
+            <span>Force a fresh review when the conversation needs another pass.</span>
+          </div>
+          <div>
+            <code>@hoverstare explain</code>
+            <span>Ask for a plain-language explanation inside a review thread.</span>
+          </div>
+          <div>
+            <code>@hoverstare help</code>
+            <span>Print the supported command list for the repository.</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="docs" class="section docs-section">
+        <div class="section-heading">
+          <p class="eyebrow">References</p>
+          <h2>Read the details.</h2>
+        </div>
+        <div class="docs-grid">
+          <a href="https://github.com/liuchong/hoverstare#readme">
+            <strong>README</strong>
+            <span>Full setup, configuration, FAQ, and local development notes.</span>
+          </a>
+          <a href="pipeline.md">
+            <strong>Pipeline</strong>
+            <span>How review passes, voting, verification, and reporting fit together.</span>
+          </a>
+          <a href="deploy.md">
+            <strong>Serve mode</strong>
+            <span>Self-host HoverStare as a GitHub App webhook service.</span>
+          </a>
+          <a href="https://github.com/liuchong/hoverstare/tree/master/specs">
+            <strong>Specs</strong>
+            <span>The milestone plan and implementation contracts behind the project.</span>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>HoverStare</span>
+      <a href="https://license.pub/1pl/">1PL License</a>
+      <a href="https://crates.io/crates/hoverstare">crates.io</a>
+      <a href="https://github.com/liuchong/hoverstare/actions">GitHub Actions</a>
+    </footer>
+
+    <script src="pages/app.js"></script>
+  </body>
+</html>
