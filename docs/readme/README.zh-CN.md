@@ -221,7 +221,7 @@ HoverStare 还能**开发**——issue 和 PR 就是一个对话驱动的开发�
 
 - 只有仓库协作者可以下达命令；fork PR 不在范围内。
 - bot 开出的 PR 上，`pull_request` 检查可能出现 **1 workflow awaiting approval**。这是 GitHub 的 maintainer 审批闸门（见下方 FAQ），不是缺 LLM 密钥。
-- 大任务会被预算切片成多轮，bot 会自动续轮（每个 PR 最多 10 轮）。bot 不能执行构建/测试——CI 失败会作为指令反馈到下一轮。
+- 大任务会被预算切片成多轮，bot 会自动续轮（每个 PR 最多 10 轮）。bot 不能执行构建/测试。Checks 红了时，把失败 job 的日志贴进 `@hoverstare` 评论——它不会自己去拉 Actions 日志。只开浏览器的用法、黄条和 dogfood 记录见 [`docs/web-ide.zh-CN.md`](../web-ide.zh-CN.md)。
 
 ## 常见问题
 
@@ -247,7 +247,7 @@ HoverStare 会降级为线程内回复"✅ 已确认修复"。如需完整 resol
 合并端点需要 `contents: write`。通过 `gh_pat` 传 PAT，或给 GitHub App 开 Contents: Read and write 权限（并在安装处接受升级）。
 
 **黄条 "1 workflow awaiting approval" / 检查停在 action_required？**
-这是 GitHub 对 `pull_request` workflow 的 maintainer 审批闸门，不是 HoverStare 的 bug，也不是缺密钥。
+这是 GitHub 对 `pull_request` workflow 的 maintainer 审批闸门，不是 HoverStare 的 bug，也不是缺密钥。只开浏览器做开发模式（含这道黄条）见 [`docs/web-ide.zh-CN.md`](../web-ide.zh-CN.md)。
 
 GitHub 会同时检查 **PR 作者** 和 **触发这次 run 的 actor**。这是两个不同的 GitHub 账号：
 

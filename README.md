@@ -253,8 +253,10 @@ events: a place where you actually build the feature, end to end, in the open.
   `pull_request` checks. That is GitHub's maintainer gate (below), not a missing
   LLM key. Approve the run, or prevent it as described in the FAQ.
 - Large tasks are sliced into budgeted rounds; the bot self-continues
-  (max 10 rounds per PR). It cannot run builds or tests — CI failures are
-  relayed back as instructions for the next round.
+  (max 10 rounds per PR). It cannot run builds or tests. When Checks fail,
+  paste the job log into an `@hoverstare` comment — the agent does not fetch
+  Actions logs. Browser-only loop, approval banner, and dogfood notes:
+  [`docs/web-ide.md`](docs/web-ide.md).
 
 ## FAQ
 
@@ -286,7 +288,8 @@ installation).
 
 **Yellow banner "1 workflow awaiting approval" / checks stuck at *action_required*?**
 This is GitHub's maintainer-approval gate for `pull_request` workflows, not a
-HoverStare bug and not a missing secret.
+HoverStare bug and not a missing secret. How to drive develop mode from the
+browser, including this banner: [`docs/web-ide.md`](docs/web-ide.md).
 
 GitHub checks **both** the pull-request author and the **actor of the event
 that started the run**. Those are different GitHub users:
