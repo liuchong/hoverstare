@@ -7,9 +7,12 @@ use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::cli::ReviewArgs;
 use crate::config::{Actor, Config, PermissionKey};
 use crate::event::MentionEvent;
-use crate::github::{GitHubClient, Repo};
+use crate::github::{GitHubClient, Repo, ReviewCommentDetail};
 use crate::i18n::T;
 use crate::orchestrator::{self, Outcome};
+
+/// Sentinel the model answers with to stay silent in a finding thread (spec 09)
+const NO_REPLY: &str = "[no-reply]";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MentionCommand {
@@ -80,13 +83,17 @@ pub async fn run_mention(cfg: &Config) -> anyhow::Result<Outcome> {
 
 /// Handle an already-parsed mention event (reused by serve mode, spec 10)
 pub async fn run_mention_event(cfg: &Config, ev: &MentionEvent) -> anyhow::Result<Outcome> {
-    let Some(cmd) = parse_command(&ev.body) else {
-        return Ok(Outcome::Skipped(
-            "comment contains no @hoverstare command".into(),
-        ));
-    };
+    // Bot authors never trigger (spec 09), not even with an @hoverstare command
+    if ev.is_bot() {
+        return Ok(Outcome::Skipped("bot author".into()));
+    }
     let repo = Repo::parse(&ev.repo).map_err(|e| anyhow::anyhow!("{e}"))?;
     let gh = GitHubClient::new(cfg.github_token.clone())?;
+
+    let Some(cmd) = parse_command(&ev.body) else {
+        // No @mention: maybe a finding-thread discussion reply (issue #13)
+        return run_thread_discussion(cfg, &gh, &repo, ev).await;
+    };
 
     // Permission: help is always allowed; review/explain use the `review` key (spec 12)
     if cmd != MentionCommand::Help {
@@ -159,6 +166,148 @@ async fn do_review(
     }
 }
 
+/// Finding-thread discussion without `@hoverstare` (issue #13, spec 09): a
+/// human collaborator replied inside a HoverStare finding thread. Every gate
+/// failure is a silent skip — in particular NO help text is posted.
+async fn run_thread_discussion(
+    cfg: &Config,
+    gh: &GitHubClient,
+    repo: &Repo,
+    ev: &MentionEvent,
+) -> anyhow::Result<Outcome> {
+    // Must be a review-thread reply (issue_comment events carry no in_reply_to)
+    let Some(parent_id) = ev.in_reply_to_id() else {
+        return Ok(Outcome::Skipped(
+            "comment contains no @hoverstare command".into(),
+        ));
+    };
+    // Cheap gate: the thread's first comment must be a HoverStare finding; a
+    // fetch failure is also a skip — no model call either way
+    let parent = match gh.get_review_comment(repo, parent_id).await {
+        Ok(p) => p,
+        Err(e) => return Ok(Outcome::Skipped(format!("parent comment fetch failed: {e}"))),
+    };
+    if !parent.body.contains(crate::state::MARKER_PREFIX) {
+        return Ok(Outcome::Skipped(
+            "thread does not belong to a hoverstare finding".into(),
+        ));
+    }
+    // Same `review` permission key as the mention commands (spec 12)
+    let evaluator = cfg.permissions_evaluator();
+    let actor = Actor {
+        login: &ev.author,
+        author_association: &ev.author_association,
+    };
+    if !evaluator
+        .evaluate(PermissionKey::Review, gh, repo, actor)
+        .await
+    {
+        let _ = gh.create_reaction(repo, ev, "eyes").await;
+        return Ok(Outcome::Skipped(format!(
+            "comment author {} does not have permission for thread discussion",
+            ev.author_association
+        )));
+    }
+
+    // Accepted reaction (same convention as mention commands)
+    let _ = gh.create_reaction(repo, ev, "rocket").await;
+
+    let t = T::new(cfg.language);
+    match do_thread_discussion(cfg, gh, repo, ev, parent_id, &parent).await {
+        Ok(Some(msg)) => {
+            let _ = gh.create_reaction(repo, ev, "+1").await;
+            tracing::info!("✅ {msg}");
+            Ok(Outcome::Published { inline_comments: 0 })
+        }
+        // The model judged the reply unrelated to the finding: stay silent
+        // (logged as a skip; never masquerade a failure as silence)
+        Ok(None) => Ok(Outcome::Skipped("model chose silence ([no-reply])".into())),
+        Err(e) => {
+            let _ = gh.create_reaction(repo, ev, "-1").await;
+            let _ = gh
+                .reply_to_review_comment(
+                    repo,
+                    ev.pr_number,
+                    parent_id,
+                    &t.command_failed(&format!("{e:#}")),
+                )
+                .await;
+            Err(e)
+        }
+    }
+}
+
+/// The model conversation for a finding-thread reply; `Ok(None)` = stay silent.
+async fn do_thread_discussion(
+    cfg: &Config,
+    gh: &GitHubClient,
+    repo: &Repo,
+    ev: &MentionEvent,
+    parent_id: u64,
+    parent: &ReviewCommentDetail,
+) -> anyhow::Result<Option<String>> {
+    let backend = crate::agent::rig_backend::RigBackend::new(cfg.llm.clone());
+    let shared: Arc<ToolShared> =
+        ToolShared::new(cfg.workspace.clone(), "HEAD", cfg.max_tool_calls / 2);
+    let req = ReviewRequest {
+        system_prompt: format!(
+            "You are HoverStare, a code review assistant. A collaborator replied inside the review \
+             thread of one of your findings. Discuss in plain, easy-to-understand {lang}: you may \
+             acknowledge a false positive, stand by the finding and give evidence, or ask one \
+             clarifying question. Do NOT declare the thread resolved unless the user explicitly \
+             asks to dismiss it. If the reply is clearly unrelated to the finding (e.g. a short \
+             acknowledgement to another collaborator), answer with the exact sentinel {NO_REPLY} \
+             and nothing else. Keep the reply under 200 words.",
+            lang = cfg.language.display_name()
+        ),
+        user_prompt: format!(
+            "[Review finding]\n{}\n\n[User reply]\n{}",
+            thread_context(parent),
+            ev.body
+        ),
+        tools: ToolRegistry {
+            shared: Some(shared),
+            ..Default::default()
+        },
+        budget: Budget {
+            max_tool_calls: cfg.max_tool_calls / 2,
+            timeout: std::time::Duration::from_secs(180),
+        },
+        model: cfg.model.clone(),
+        temperature: cfg.temp(0.3),
+    };
+    let run = backend.review(req).await?;
+    let text = run.raw_output.trim();
+    if is_no_reply(text) {
+        return Ok(None);
+    }
+    if text.is_empty() {
+        anyhow::bail!("model returned an empty reply");
+    }
+    // The reply stays in the original thread (REST replies endpoint, spec 09)
+    gh.reply_to_review_comment(repo, ev.pr_number, parent_id, text)
+        .await?;
+    Ok(Some("thread discussion replied".to_string()))
+}
+
+/// Finding context for thread prompts: the first comment body (markers
+/// stripped) plus the comment's path/diff_hunk snippet (spec 09)
+fn thread_context(detail: &ReviewCommentDetail) -> String {
+    let mut ctx = crate::state::strip_markers(&detail.body);
+    if !detail.path.is_empty() {
+        ctx.push_str(&format!("\n\nFile: `{}`", detail.path));
+    }
+    if !detail.diff_hunk.is_empty() {
+        ctx.push_str(&format!("\n\n```diff\n{}\n```", detail.diff_hunk));
+    }
+    ctx
+}
+
+/// The model stays silent by answering with the exact `[no-reply]` sentinel
+fn is_no_reply(text: &str) -> bool {
+    text.trim() == NO_REPLY
+}
+
 /// `@hoverstare explain`: explain a finding (lightweight call, no multi-pass)
 async fn do_explain(
     cfg: &Config,
@@ -166,28 +315,36 @@ async fn do_explain(
     repo: &Repo,
     ev: &MentionEvent,
 ) -> anyhow::Result<String> {
-    // Context: thread reply -> the comment being replied to; otherwise the body
-    // of the most recent hoverstare review
-    let context = if let Some(parent_id) = ev.in_reply_to_id() {
-        gh.get_review_comment_body(repo, parent_id).await?
+    // Context: thread reply -> the comment being replied to (finding body +
+    // path/diff_hunk); otherwise the body of the most recent hoverstare review
+    let (context, thread_parent) = if let Some(parent_id) = ev.in_reply_to_id() {
+        let detail = gh.get_review_comment(repo, parent_id).await?;
+        (thread_context(&detail), Some(parent_id))
     } else {
         let reviews = gh.list_reviews(repo, ev.pr_number).await?;
-        reviews
+        let body = reviews
             .iter()
             .rev()
             .find(|r| r.body.contains(crate::state::META_MARKER))
             .map(|r| r.body.clone())
-            .unwrap_or_else(|| "(no historical review content found)".to_string())
+            .unwrap_or_else(|| "(no historical review content found)".to_string());
+        (body, None)
     };
 
     let backend = crate::agent::rig_backend::RigBackend::new(cfg.llm.clone());
     let text = explain_with_backend(&backend, cfg, &context, &ev.body).await?;
-    gh.create_issue_comment(
-        repo,
-        ev.pr_number,
-        &format!("{}\n\n{text}", T::new(cfg.language).explain_header()),
-    )
-    .await?;
+    let body = format!("{}\n\n{text}", T::new(cfg.language).explain_header());
+    // With in_reply_to_id the reply stays in the original thread (REST replies
+    // endpoint); otherwise fall back to a PR conversation comment (spec 09)
+    match thread_parent {
+        Some(parent_id) => {
+            gh.reply_to_review_comment(repo, ev.pr_number, parent_id, &body)
+                .await?;
+        }
+        None => {
+            gh.create_issue_comment(repo, ev.pr_number, &body).await?;
+        }
+    }
     Ok("explain replied".to_string())
 }
 
@@ -284,5 +441,35 @@ mod tests {
             parse_command("```\nsome code\n```\n@hoverstare review"),
             Some(MentionCommand::Review)
         );
+    }
+
+    #[test]
+    fn no_reply_sentinel() {
+        assert!(is_no_reply("[no-reply]"));
+        assert!(is_no_reply("  [no-reply]\n"));
+        assert!(!is_no_reply("[no-reply] but let me add context"));
+        assert!(!is_no_reply("good point, this is a false positive"));
+        assert!(!is_no_reply(""));
+    }
+
+    #[test]
+    fn thread_context_strips_markers_and_adds_anchor() {
+        let detail = ReviewCommentDetail {
+            body: "🟠 **HIGH**: null deref\n<!-- hoverstare-finding:0123456789abcdef -->".into(),
+            path: "src/a.rs".into(),
+            diff_hunk: "@@ -1,2 +1,2 @@\n-let x = 1;\n+let x = 2;".into(),
+        };
+        let ctx = thread_context(&detail);
+        assert!(ctx.contains("null deref"));
+        assert!(!ctx.contains("hoverstare-finding"));
+        assert!(ctx.contains("File: `src/a.rs`"));
+        assert!(ctx.contains("```diff"));
+        // Missing anchoring info is simply omitted
+        let bare = ReviewCommentDetail {
+            body: "finding".into(),
+            path: String::new(),
+            diff_hunk: String::new(),
+        };
+        assert_eq!(thread_context(&bare), "finding");
     }
 }

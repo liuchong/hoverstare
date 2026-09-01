@@ -308,6 +308,7 @@ async fn reactions_use_correct_endpoints() {
         body: "@hoverstare review".into(),
         author_association: "OWNER".into(),
         author: "u".into(),
+        user_type: "User".into(),
         in_reply_to: None,
     };
     gh.create_reaction(&repo(), &ev_issue, "rocket")
@@ -339,6 +340,29 @@ async fn fetch_review_comment_body() {
     let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
     let body = gh.get_review_comment_body(&repo(), 9).await.unwrap();
     assert!(body.contains("空指针"));
+}
+
+/// 取线程评论的锚定信息 path/diff_hunk（finding 线程讨论上下文，issue #13）
+#[tokio::test]
+async fn fetch_review_comment_detail() {
+    let server = MockServer::start_async().await;
+    let m = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/repos/o/r/pulls/comments/9");
+            then.status(200).json_body(serde_json::json!({
+                "id": 9,
+                "body": "🟠 **HIGH**: 空指针 <!-- hoverstare-finding:0123456789abcdef -->",
+                "path": "src/a.rs",
+                "diff_hunk": "@@ -1,2 +1,2 @@\n-let x = 1;\n+let x = 2;",
+            }));
+        })
+        .await;
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    let detail = gh.get_review_comment(&repo(), 9).await.unwrap();
+    assert!(detail.body.contains("hoverstare-finding"));
+    assert_eq!(detail.path, "src/a.rs");
+    assert!(detail.diff_hunk.contains("+let x = 2;"));
+    m.assert_async().await;
 }
 
 /// mention 事件解析：issue_comment（PR）/ 纯 issue / review 线程回复
