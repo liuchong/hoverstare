@@ -200,10 +200,10 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
      检测：`gh run list --json conclusion --jq '.[]|select(.conclusion=="action_required")'`。
      解开：PR 上 **Approve workflows to run**，或
      `gh api -X POST repos/<owner>/<repo>/actions/runs/<id>/approve`。
-     预防：写操作走协作者 PAT（`GH_PAT`），评论身份仍用 App；或把仓库
-     Settings → Actions → General 的 fork-PR 审批改成
-     「Require approval for first-time contributors who are new to GitHub」
-     （`github-actions[bot]` 不是新账号）。不要用 `pull_request_target` 自动批准。
+     预防：写操作走协作者 PAT（`GH_PAT`），评论/开 PR 仍用 App。不要指望「都用
+     App」来统一 CI actor——没配 `GH_PAT` 时 push 已经是 App token，continue
+     轮仍记成 `github-actions[bot]`。fork-PR「只拦 GitHub 新账号」对这种同仓库
+     Actions push **实测无效**。不要用 `pull_request_target` 自动批准。
    - push/merge 403 → 写令牌缺 contents:write；
    - "no changes" → 先看 warn 日志里的 agent 摘要和 budget_exhausted；
    - run 显示 cancelled → 查并发组是否又被 bot 自己的事件顶掉（手册 #10）。

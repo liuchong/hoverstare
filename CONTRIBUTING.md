@@ -53,7 +53,7 @@ Examples:
 
 PR reviews are performed by **HoverStare itself** (the bot). Repo collaborators can trigger or re-trigger a review by posting `@hoverstare review` in a PR. For a list of available commands, post `@hoverstare help`.
 
-If Checks shows a yellow **1 workflow awaiting approval** banner, that is GitHub's maintainer gate for `pull_request` runs whose triggering actor looks like a first-time contributor. Merging earlier `hoverstare[bot]` PRs only trusts that App identity (the run that opens the PR). Later commits pushed from Actions are often attributed to `github-actions[bot]`, a different user, so the banner can appear on `continue` rounds even after bot PRs have been merged. It is not a failed test. Click **Approve workflows to run**, or see the FAQ in [`README.md`](README.md).
+If Checks shows a yellow **1 workflow awaiting approval** banner, that is GitHub's maintainer gate for `pull_request` runs. The App identity (`hoverstare[bot]`) covers comments, the PR author, and commits; a later push **from Actions** is still attributed to `github-actions[bot]`. Merging earlier bot PRs does not skip that second actor. Click **Approve workflows to run**, or see the FAQ in [`README.md`](README.md).
 
 For details on bot commands, see the [`@hoverstare` commands](README.md#hoverstare-commands) section in `README.md`.
 

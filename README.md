@@ -293,17 +293,17 @@ that started the run**. Those are different GitHub users:
 - Opening the PR as `hoverstare[bot]` uses the App identity. Once a
   `hoverstare[bot]` PR has been merged, later PRs opened by the same bot run
   `pull_request` CI without this banner.
-- A later commit pushed **from a workflow** (App token inside Actions) is often
-  attributed to `github-actions[bot]`. That is a different account and has
-  never had a PR merged, so the default policy ("Require approval for
-  first-time contributors") asks a maintainer to approve **on every such
-  push**. Approving one SHA does not trust the next SHA.
+- Using the GitHub App does **not** make those later CI runs look like the
+  App. Comments, the PR author, and `git log` stay `hoverstare[bot]`. A commit
+  pushed **from Actions** (even with the App installation token) is still
+  recorded as `github-actions[bot]` for the `pull_request` workflow. That
+  account has never had a PR merged, so the default policy asks a maintainer
+  to approve **on every such push**. Approving one SHA does not trust the next.
 
 That is why a repo can already have merged bot PRs and still stop on
 `continue` rounds. Single-commit bot PRs only hit the first case (already
-trusted). If secret `GH_PAT` is set, `git push` is the collaborator, continue
-rounds skip the gate, and GitHub may even list that collaborator as the PR
-author.
+trusted). The App is the right unique identity for comments and commits; it
+is not the actor GitHub uses for this gate.
 
 Detect:
 
@@ -318,17 +318,19 @@ Unblock this PR: click **Approve workflows to run**, or
 gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve
 ```
 
-Prevent (choose one):
+Prevent:
 
-1. **Preferred for develop mode:** pass a collaborator PAT as `gh_pat` / secret
-   `GH_PAT` for `git push`. Identity (comments) can stay on the App token; the
-   `pull_request` actor is then a known collaborator and the gate does not fire.
-2. **Repo setting:** *Settings → Actions → General → Approval for running fork
-   pull request workflows from contributors* → **Require approval for first-time
-   contributors who are new to GitHub**. `github-actions[bot]` is not new, so
-   Actions-pushed commits stop waiting. Trade-off: anyone with an existing
-   GitHub account can run `pull_request` workflows on their first PR without a
-   click (fork PRs still do not receive secrets).
+1. **What actually skips the gate:** pass a collaborator PAT as `gh_pat` /
+   secret `GH_PAT` for `git push`. Keep the App token for comments and opening
+   the PR (`hoverstare[bot]` stays the unique product identity). GitHub then
+   treats the `pull_request` actor as the collaborator. This is also how
+   develop mode is specified: App = identity, PAT = write.
+2. **What does not:** using only the App for push (the current fallback when
+   `GH_PAT` is unset). That already happens in dogfood, and continue-round CI
+   still shows `github-actions[bot]`. Relaxing *Settings → Actions → General →
+   Approval for running fork pull request workflows* to **Require approval for
+   first-time contributors who are new to GitHub** is fine for real fork PRs;
+   it has **not** been observed to skip this same-repo Actions-push gate.
 3. Do **not** add a `pull_request_target` workflow whose only job is to approve
    other runs. That event runs with base-branch privileges and is a common
    injection path.

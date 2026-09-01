@@ -280,10 +280,11 @@ colaborador y las rondas `continue` tampoco disparan la puerta.
 Detectar: `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
 Desbloquear: **Approve workflows to run**, o
 `gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve`.
-Evitar: PAT de colaborador en `gh_pat`/`GH_PAT` para el push (la identidad de
-los comentarios puede seguir siendo la App); o en Settings → Actions → General
-elegir **Require approval for first-time contributors who are new to GitHub**.
-No uses un workflow `pull_request_target` solo para autoaprobar otros runs.
+Evitar: PAT de colaborador en `gh_pat`/`GH_PAT` para el push; la App sigue
+siendo la identidad de comentarios y del PR. Empujar solo con la App (el
+fallback actual) no unifica el actor de CI: GitHub sigue registrando
+`github-actions[bot]`. Relajar la política de fork-PR no ha saltado esta
+puerta en el mismo repositorio. No uses `pull_request_target` para autoaprobar.
 
 **¿Una ronda go/dev responde "sin cambios, no se creó PR"?**
 Normalmente la tarea era demasiado vaga para una ronda presupuestada. Responde con una instrucción más concreta y pequeña (qué archivos tocar, criterios de aceptación) y repite `go` — el comentario del bot dice lo que realmente hizo.

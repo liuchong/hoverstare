@@ -282,11 +282,11 @@ déclenchent pas la barrière.
 Détecter : `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
 Débloquer : **Approve workflows to run**, ou
 `gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve`.
-Prévenir : PAT collaborateur en `gh_pat`/`GH_PAT` pour le push (l'identité des
-commentaires peut rester l'App) ; ou dans Settings → Actions → General choisir
-**Require approval for first-time contributors who are new to GitHub**.
-N'ajoutez pas un workflow `pull_request_target` dont le seul rôle est d'approuver
-d'autres runs.
+Prévenir : PAT collaborateur en `gh_pat`/`GH_PAT` pour le push ; commentaires
+et PR restent l'App. Pousser uniquement avec l'App (le repli actuel) ne
+unifie pas l'acteur CI : GitHub enregistre encore `github-actions[bot]`.
+Assouplir la politique fork-PR n'a pas sauté cette barrière sur le même
+dépôt. Pas de `pull_request_target` pour auto-approuver.
 
 **Un round go/dev répond « aucun changement, pas de PR créée » ?**
 La tâche était probablement trop vague pour un round budgété. Répondez avec une instruction plus précise et plus petite (fichiers à toucher, critères d'acceptation) et relancez `go` — le commentaire du bot indique ce qu'il a réellement fait.

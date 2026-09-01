@@ -251,9 +251,9 @@ HoverStare 会降级为线程内回复"✅ 已确认修复"。如需完整 resol
 GitHub 会同时检查 **PR 作者** 和 **触发这次 run 的 actor**。这是两个不同的 GitHub 账号：
 
 - 用 App 身份开 PR 时，作者是 `hoverstare[bot]`。这个 bot 只要已经有过被 merge 的 PR，以后它再开 PR，开 PR 那一次的 `pull_request` CI **不会** 亮黄条。
-- 后续 commit 若是 **workflow 里 push** 的（Actions 里的 App token），触发 actor 经常变成 `github-actions[bot]`。这是另一个账号，从未作为作者被 merge 过，所以默认策略（「Require approval for first-time contributors」）会在 **每一次这样的 push** 上再要一次批准。批准某一个 SHA 不会自动信任下一个 SHA。
+- 即使用 GitHub App 做后续 push，也**不会**让后面的 CI 显示成 App。评论、PR 作者、`git log` 仍是 `hoverstare[bot]`；从 **Actions 里 push** 的 commit（即便用的是 App installation token）在 `pull_request` workflow 上仍记成 `github-actions[bot]`。这个账号从未作为作者被 merge 过，默认策略会在 **每一次这样的 push** 上再要一次批准。批准某一个 SHA 不会自动信任下一个 SHA。
 
-所以仓库里已经 merge 过 bot 的 PR，`continue` 轮仍可能停。只有一颗 commit 的 bot PR 只会碰到第一种（已经信任）。若配置了 secret `GH_PAT`，`git push` 是协作者，后续轮次不会亮闸门，GitHub 甚至可能把 PR 作者显示成该协作者。
+所以仓库里已经 merge 过 bot 的 PR，`continue` 轮仍可能停。只有一颗 commit 的 bot PR 只会碰到第一种（已经信任）。App 是评论和 commit 的正确唯一身份，但不是这道闸门看的那个 actor。
 
 检测：
 
@@ -268,10 +268,10 @@ gh run list --repo OWNER/REPO --json databaseId,name,conclusion,event,headBranch
 gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve
 ```
 
-预防（选一种）：
+预防：
 
-1. **开发模式优先：** 用协作者的 PAT 作为 `gh_pat` / secret `GH_PAT` 做 `git push`。评论身份仍用 App token；`pull_request` 的 actor 变成已知协作者，闸门不会亮。
-2. **仓库设置：** Settings → Actions → General → Approval for running fork pull request workflows from contributors → **Require approval for first-time contributors who are new to GitHub**。`github-actions[bot]` 不是新账号，Actions 推上来的 commit 就不再等待。代价：已有 GitHub 账号的人第一次向本仓库提 PR 时，`pull_request` workflow 会直接跑（fork PR 仍然拿不到 secrets）。
+1. **真正能跳过闸门的：** 用协作者 PAT 作为 `gh_pat` / secret `GH_PAT` 做 `git push`。评论和开 PR 继续用 App token（产品身份仍是 `hoverstare[bot]`）。GitHub 会把 `pull_request` 的 actor 记成协作者。这也是开发模式的既定分工：App = 身份，PAT = 写操作。
+2. **做不到的：** 只靠 App 做 push（没配 `GH_PAT` 时的现行回落）。dogfood 已经是这样，continue 轮的 CI 仍显示 `github-actions[bot]`。把仓库 fork-PR 审批改成「只拦 GitHub 新账号」对真正的 fork PR 有用，**实测挡不住**这种同仓库、从 Actions push 的闸门。
 3. **不要** 写一个 `pull_request_target` workflow 专门去批准别的 run。该事件以 base 分支权限运行，是常见注入面。
 
 **go/开发轮回复"没有改动、未创建 PR"？**

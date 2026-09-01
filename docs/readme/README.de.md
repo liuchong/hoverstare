@@ -282,10 +282,11 @@ trifft den zweiten Fall nicht; mit `GH_PAT` pusht der Collaborator, und
 Erkennen: `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
 Entsperren: **Approve workflows to run**, oder
 `gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve`.
-Vermeiden: Collaborator-PAT als `gh_pat`/`GH_PAT` für Push (Kommentar-Identität
-kann die App bleiben); oder unter Settings → Actions → General
-**Require approval for first-time contributors who are new to GitHub**.
-Kein `pull_request_target`-Workflow nur zum Auto-Approven anderer Runs.
+Vermeiden: Collaborator-PAT als `gh_pat`/`GH_PAT` für Push; Kommentare und PR
+bleiben die App. Nur die App zum Pushen (der heutige Fallback) vereinheitlicht
+den CI-Actor nicht — GitHub bleibt bei `github-actions[bot]`. Die gelockerte
+Fork-PR-Richtlinie hat dieses Tor im selben Repo nicht übersprungen. Kein
+`pull_request_target` nur zum Auto-Approven.
 
 **Eine go/dev-Runde meldet „keine Änderungen, kein PR erstellt“?**
 Meist war die Aufgabe zu vage für eine budgetierte Runde. Antworte mit einer schärferen, kleineren Anweisung (welche Dateien, Akzeptanzkriterien) und starte `go` erneut — im Kommentar des Bots steht, was er tatsächlich getan hat.

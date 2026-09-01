@@ -268,10 +268,11 @@ GitHub проверяет **и** автора PR, **и** актора событ
 Обнаружить: `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
 Разблокировать: **Approve workflows to run** или
 `gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve`.
-Предотвратить: PAT коллаборатора в `gh_pat`/`GH_PAT` для push (личность
-комментариев может остаться App); либо в Settings → Actions → General выбрать
-**Require approval for first-time contributors who are new to GitHub**.
-Не добавляйте workflow `pull_request_target` только чтобы автоодобрять другие run.
+Предотвратить: PAT коллаборатора в `gh_pat`/`GH_PAT` для push; комментарии и PR
+остаются App. Пуш только токеном App (текущий fallback) не унифицирует актора
+CI — GitHub всё равно пишет `github-actions[bot]`. Ослабленная политика fork-PR
+этот шлюз в том же репозитории не снимала. Не используйте `pull_request_target`
+для автоодобрения.
 
 **Раунд go/develop отвечает «нет изменений, PR не создан»?**
 Обычно задача слишком размыта для одного бюджетного раунда. Ответьте более точной и малой инструкцией (какие файлы трогать, критерии приёмки) и повторите `go` — в комментарии бота написано, что он реально сделал.
