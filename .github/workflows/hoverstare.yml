@@ -78,6 +78,7 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           OPENAI_API_KEY: ${{ secrets.HOVERSTARE_LLM_KEY }}
           OPENAI_BASE_URL: ${{ vars.HOVERSTARE_LLM_BASE_URL }}
+          HOVERSTARE_MODEL: ${{ vars.HOVERSTARE_MODEL }}
         run: |
           set -euo pipefail
           bin=./target/release/hoverstare
