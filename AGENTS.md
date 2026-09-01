@@ -223,6 +223,9 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
 
 ## 7.6 网页闭环复盘（issue #13 / PR #14 dogfood）
 
+用户文档与示范（用法 + 现场缺口）：[`docs/web-ide.md`](docs/web-ide.md) /
+[`docs/web-ide.zh-CN.md`](docs/web-ide.zh-CN.md)。下面是操作对照摘要。
+
 产品把 GitHub 网页当 IDE（spec 11）：issue/PR 评论 = 对话，Checks = 验证，
 bot 不主动去扫 CI。这次把「只坐在 github.com、不靠本机 CLI」能走多远测清楚了。
 

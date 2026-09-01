@@ -62,6 +62,7 @@ For details on bot commands, see the [`@hoverstare` commands](README.md#hoversta
 - [`AGENTS.md`](AGENTS.md) — project background, architecture rules, and hard constraints.
 - [`specs/README.md`](specs/README.md) — design specs and milestone plan.
 - [`README.md`](README.md) — quick start, local dry-run examples, and the `@hoverstare` command table.
+- [`docs/web-ide.md`](docs/web-ide.md) — using GitHub in the browser as the develop-mode IDE (usage + dogfood notes).
 
 ## Local develop loop
 
