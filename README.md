@@ -201,6 +201,7 @@ Post in a PR (repo collaborators only):
 |---|---|
 | `@hoverstare review` | Force a full re-review |
 | `@hoverstare explain` | Reply in the thread with a plain-language explanation of the finding |
+| Reply in a finding thread | Discuss the finding with HoverStare in-thread — no `@mention` needed |
 | `@hoverstare help` | Command list |
 
 ## Develop mode: issues & PRs as your AI IDE

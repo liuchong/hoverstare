@@ -202,6 +202,7 @@ Publica en un PR (solo colaboradores del repo):
 |---|---|
 | `@hoverstare review` | Fuerza una revisión completa |
 | `@hoverstare explain` | Responde en el hilo con una explicación sencilla del hallazgo |
+| Responder en el hilo de un hallazgo | Discutir el hallazgo con HoverStare en el hilo — no hace falta `@mention` |
 | `@hoverstare help` | Lista de comandos |
 
 ## Modo desarrollo: issues y PRs como tu IDE de IA

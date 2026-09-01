@@ -204,6 +204,7 @@ In einem PR posten (nur Repo-Kollaboratoren):
 |---|---|
 | `@hoverstare review` | Erzwingt ein komplettes Re-Review |
 | `@hoverstare explain` | Antwortet im Thread mit einer verständlichen Erklärung des Befunds |
+| Im Thread eines Befunds antworten | Den Befund mit HoverStare im Thread diskutieren — kein `@mention` nötig |
 | `@hoverstare help` | Befehlsliste |
 
 ## Entwicklungsmodus: Issues & PRs als KI-IDE
