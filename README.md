@@ -248,8 +248,9 @@ events: a place where you actually build the feature, end to end, in the open.
 ### Notes
 
 - Only repo collaborators can issue commands; fork PRs are out of scope.
-- PRs opened by the bot may hold CI in *action_required* state until approved,
-  depending on your repo's Actions approval policy (first-time contributors).
+- PRs opened by the bot can show **1 workflow awaiting approval** on
+  `pull_request` checks. That is GitHub's maintainer gate (below), not a missing
+  LLM key. Approve the run, or prevent it as described in the FAQ.
 - Large tasks are sliced into budgeted rounds; the bot self-continues
   (max 10 rounds per PR). It cannot run builds or tests — CI failures are
   relayed back as instructions for the next round.
@@ -282,10 +283,44 @@ The merge endpoint needs `contents: write`. Pass a PAT via `gh_pat`, or grant
 the GitHub App Contents: Read and write (and accept the upgrade on the
 installation).
 
-**CI on the bot's PR sits at *action_required*?**
-That's GitHub's approval policy for outside/first-time contributors. Approve
-the runs once, or relax it under *Settings → Actions → General → Fork pull
-request workflows*.
+**Yellow banner "1 workflow awaiting approval" / checks stuck at *action_required*?**
+This is GitHub's maintainer-approval gate for `pull_request` workflows, not a
+HoverStare bug and not a missing secret.
+
+GitHub checks **both** the pull-request author and the **actor of the event
+that started the run**. The PR is opened as `hoverstare[bot]`. When a later
+commit is pushed **from a workflow** (GitHub App token inside Actions), the
+triggering actor is often `github-actions[bot]`. That account has never had a
+PR merged, so the default policy ("Require approval for first-time
+contributors") asks a maintainer to approve **on every such push**.
+
+Detect:
+
+```bash
+gh run list --repo OWNER/REPO --json databaseId,name,conclusion,event,headBranch \
+  --jq '.[] | select(.conclusion=="action_required")'
+```
+
+Unblock this PR: click **Approve workflows to run**, or
+
+```bash
+gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve
+```
+
+Prevent (choose one):
+
+1. **Preferred for develop mode:** pass a collaborator PAT as `gh_pat` / secret
+   `GH_PAT` for `git push`. Identity (comments) can stay on the App token; the
+   `pull_request` actor is then a known collaborator and the gate does not fire.
+2. **Repo setting:** *Settings → Actions → General → Approval for running fork
+   pull request workflows from contributors* → **Require approval for first-time
+   contributors who are new to GitHub**. `github-actions[bot]` is not new, so
+   Actions-pushed commits stop waiting. Trade-off: anyone with an existing
+   GitHub account can run `pull_request` workflows on their first PR without a
+   click (fork PRs still do not receive secrets).
+3. Do **not** add a `pull_request_target` workflow whose only job is to approve
+   other runs. That event runs with base-branch privileges and is a common
+   injection path.
 
 **A `go`/dev round says "no changes, no PR created"?**
 Usually the task was too vague for one budgeted round. Reply with a sharper,

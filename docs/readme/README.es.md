@@ -233,7 +233,9 @@ HoverStare también puede *desarrollar* — los issues y PRs se convierten en un
 ### Notas
 
 - Solo los colaboradores del repo pueden dar comandos; los PRs de fork están fuera de alcance.
-- Los PRs abiertos por el bot pueden dejar CI pendiente de aprobación (action_required), según la política de Actions del repo (first-time contributors).
+- Los PRs abiertos por el bot pueden mostrar **1 workflow awaiting approval** en
+  las comprobaciones `pull_request`. Es la puerta de aprobación de GitHub (FAQ
+  más abajo), no una clave LLM ausente.
 - Las tareas grandes se dividen en rondas presupuestadas; el bot se autocontinúa (máx. 10 rondas por PR). No puede ejecutar builds ni tests — los fallos de CI se transmiten como instrucciones a la siguiente ronda.
 
 ## Preguntas frecuentes
@@ -262,8 +264,24 @@ Define `GITHUB_API_URL=https://<tu-host-ghe>/api/v3`.
 **¿`@hoverstare merge` falla con 403?**
 El endpoint de merge requiere `contents: write`. Pasa un PAT con `gh_pat`, o concede a la GitHub App Contents: Read and write (y acepta la actualización en la instalación).
 
-**¿CI del PR del bot se queda en action_required?**
-Es la política de aprobación de GitHub para contribuidores externos/nuevos. Aprueba las ejecuciones una vez, o relájala en Settings → Actions → General → Fork pull request workflows.
+**¿Banner amarillo "1 workflow awaiting approval" / CI en action_required?**
+Es la puerta de aprobación de GitHub para workflows `pull_request`, no un fallo
+de HoverStare ni un secreto que falte.
+
+GitHub comprueba **tanto** el autor del PR **como** el actor del evento que
+arrancó el run. El PR lo abre `hoverstare[bot]`; si un commit posterior se
+empuja **desde un workflow** (token de App en Actions), el actor suele ser
+`github-actions[bot]`. Esa cuenta nunca ha mergeado un PR, así que la política
+por defecto («Require approval for first-time contributors») pide aprobación
+**en cada push de ese tipo**.
+
+Detectar: `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
+Desbloquear: **Approve workflows to run**, o
+`gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve`.
+Evitar: PAT de colaborador en `gh_pat`/`GH_PAT` para el push (la identidad de
+los comentarios puede seguir siendo la App); o en Settings → Actions → General
+elegir **Require approval for first-time contributors who are new to GitHub**.
+No uses un workflow `pull_request_target` solo para autoaprobar otros runs.
 
 **¿Una ronda go/dev responde "sin cambios, no se creó PR"?**
 Normalmente la tarea era demasiado vaga para una ronda presupuestada. Responde con una instrucción más concreta y pequeña (qué archivos tocar, criterios de aceptación) y repite `go` — el comentario del bot dice lo que realmente hizo.

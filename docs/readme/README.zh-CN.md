@@ -219,7 +219,7 @@ HoverStare 还能**开发**——issue 和 PR 就是一个对话驱动的开发�
 ### 注意
 
 - 只有仓库协作者可以下达命令；fork PR 不在范围内。
-- bot 创建的 PR 的 CI 可能需要人工批准（action_required），取决于仓库的 Actions 审批策略（首次贡献者）。
+- bot 开出的 PR 上，`pull_request` 检查可能出现 **1 workflow awaiting approval**。这是 GitHub 的 maintainer 审批闸门（见下方 FAQ），不是缺 LLM 密钥。
 - 大任务会被预算切片成多轮，bot 会自动续轮（每个 PR 最多 10 轮）。bot 不能执行构建/测试——CI 失败会作为指令反馈到下一轮。
 
 ## 常见问题
@@ -245,8 +245,29 @@ HoverStare 会降级为线程内回复"✅ 已确认修复"。如需完整 resol
 **`@hoverstare merge` 报 403？**
 合并端点需要 `contents: write`。通过 `gh_pat` 传 PAT，或给 GitHub App 开 Contents: Read and write 权限（并在安装处接受升级）。
 
-**bot 的 PR 上 CI 停在 action_required？**
-这是 GitHub 对外部/首次贡献者的审批策略。手动批准一次，或在 Settings → Actions → General → Fork pull request workflows 放宽。
+**黄条 "1 workflow awaiting approval" / 检查停在 action_required？**
+这是 GitHub 对 `pull_request` workflow 的 maintainer 审批闸门，不是 HoverStare 的 bug，也不是缺密钥。
+
+GitHub 会同时检查 **PR 作者** 和 **触发这次 run 的 actor**。PR 是 `hoverstare[bot]` 开的；后续 commit 若是 **workflow 里 push** 的（Actions 里的 App token），触发 actor 经常是 `github-actions[bot]`。这个账号从未作为作者被 merge 过，所以默认策略（「Require approval for first-time contributors」）会在 **每一次这样的 push** 上要求 maintainer 点批准。
+
+检测：
+
+```bash
+gh run list --repo OWNER/REPO --json databaseId,name,conclusion,event,headBranch \
+  --jq '.[] | select(.conclusion=="action_required")'
+```
+
+解开当前 PR：点 **Approve workflows to run**，或
+
+```bash
+gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve
+```
+
+预防（选一种）：
+
+1. **开发模式优先：** 用协作者的 PAT 作为 `gh_pat` / secret `GH_PAT` 做 `git push`。评论身份仍用 App token；`pull_request` 的 actor 变成已知协作者，闸门不会亮。
+2. **仓库设置：** Settings → Actions → General → Approval for running fork pull request workflows from contributors → **Require approval for first-time contributors who are new to GitHub**。`github-actions[bot]` 不是新账号，Actions 推上来的 commit 就不再等待。代价：已有 GitHub 账号的人第一次向本仓库提 PR 时，`pull_request` workflow 会直接跑（fork PR 仍然拿不到 secrets）。
+3. **不要** 写一个 `pull_request_target` workflow 专门去批准别的 run。该事件以 base 分支权限运行，是常见注入面。
 
 **go/开发轮回复"没有改动、未创建 PR"？**
 通常是任务对单轮预算来说太模糊。用更具体、更小的指令（要动哪些文件、验收标准）再 `go` 一次——bot 评论里会说明它实际做了什么。

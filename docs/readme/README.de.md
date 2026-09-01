@@ -235,7 +235,8 @@ HoverStare kann auch *entwickeln* — Issues und PRs werden zu einer dialoggeste
 ### Hinweise
 
 - Nur Repo-Collaborators können Befehle erteilen; Fork-PRs sind ausgeschlossen.
-- CI für vom Bot geöffnete PRs kann je nach Actions-Policy des Repos (First-time Contributors) eine manuelle Genehmigung brauchen (action_required).
+- CI für vom Bot geöffnete PRs kann **1 workflow awaiting approval** zeigen.
+  Das ist GitHubs Maintainer-Freigabe (siehe FAQ), kein fehlender LLM-Schlüssel.
 - Große Aufgaben werden in budgetierte Runden geschnitten; der Bot setzt sich selbst fort (max. 10 Runden pro PR). Er kann keine Builds oder Tests ausführen — CI-Fehler werden als Anweisungen an die nächste Runde weitergereicht.
 
 ## FAQ
@@ -265,8 +266,24 @@ Setze `GITHUB_API_URL=https://<dein-ghe-host>/api/v3`.
 **`@hoverstare merge` schlägt mit 403 fehl?**
 Der Merge-Endpunkt braucht `contents: write`. Übergib ein PAT über `gh_pat` oder gib der GitHub App Contents: Read and write (und akzeptiere das Upgrade in der Installation).
 
-**CI auf dem Bot-PR hängt bei action_required?**
-Das ist GitHubs Genehmigungsrichtlinie für externe/Erst-Beitragende. Genehmige die Runs einmal, oder lockere sie unter Settings → Actions → General → Fork pull request workflows.
+**Gelbes Banner „1 workflow awaiting approval“ / Checks bei action_required?**
+Das ist GitHubs Freigabe-Tor für `pull_request`-Workflows, kein HoverStare-Fehler
+und kein fehlendes Secret.
+
+GitHub prüft **sowohl** den PR-Autor **als auch** den Actor des auslösenden
+Events. Den PR öffnet `hoverstare[bot]`; kommt ein späterer Commit **aus einem
+Workflow** (App-Token in Actions), ist der Actor oft `github-actions[bot]`.
+Dieses Konto hat nie einen PR gemerged, daher verlangt die Standardrichtlinie
+(„Require approval for first-time contributors“) bei **jedem solchen Push**
+eine Maintainer-Freigabe.
+
+Erkennen: `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
+Entsperren: **Approve workflows to run**, oder
+`gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve`.
+Vermeiden: Collaborator-PAT als `gh_pat`/`GH_PAT` für Push (Kommentar-Identität
+kann die App bleiben); oder unter Settings → Actions → General
+**Require approval for first-time contributors who are new to GitHub**.
+Kein `pull_request_target`-Workflow nur zum Auto-Approven anderer Runs.
 
 **Eine go/dev-Runde meldet „keine Änderungen, kein PR erstellt“?**
 Meist war die Aufgabe zu vage für eine budgetierte Runde. Antworte mit einer schärferen, kleineren Anweisung (welche Dateien, Akzeptanzkriterien) und starte `go` erneut — im Kommentar des Bots steht, was er tatsächlich getan hat.

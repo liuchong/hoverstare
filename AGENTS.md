@@ -188,10 +188,21 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
    PR 评论指令（开发轮）→ 等 CI → `@hoverstare merge`。观测点：
    `gh run list --workflow hoverstare.yml`、issue/PR 评论里的 hoverstare-dev
    隐藏标记（m=plan/impl, r=轮次）、分支 commit 作者应为 hoverstare[bot]。
-3. **常见卡点对照**：`action_required` → 手动批准 run（bot 是外部贡献者）；
-   push/merge 403 → 写令牌缺 contents:write；"no changes" → 先看 warn 日志里
-   的 agent 摘要和 budget_exhausted；run 显示 cancelled → 查并发组是否又被
-   bot 自己的事件顶掉（手册 #10）。
+3. **常见卡点对照**：
+   - 黄条 **1 workflow awaiting approval** / run `conclusion=action_required`：
+     GitHub 的 `pull_request` maintainer 闸门。PR 作者是 `hoverstare[bot]`，但
+     workflow 里 push 的后续 commit 触发 actor 常为 `github-actions[bot]`（从未
+     作为作者被 merge），默认「首次贡献者须批准」会 **每 push 都停一次**。
+     检测：`gh run list --json conclusion --jq '.[]|select(.conclusion=="action_required")'`。
+     解开：PR 上 **Approve workflows to run**，或
+     `gh api -X POST repos/<owner>/<repo>/actions/runs/<id>/approve`。
+     预防：写操作走协作者 PAT（`GH_PAT`），评论身份仍用 App；或把仓库
+     Settings → Actions → General 的 fork-PR 审批改成
+     「Require approval for first-time contributors who are new to GitHub」
+     （`github-actions[bot]` 不是新账号）。不要用 `pull_request_target` 自动批准。
+   - push/merge 403 → 写令牌缺 contents:write；
+   - "no changes" → 先看 warn 日志里的 agent 摘要和 budget_exhausted；
+   - run 显示 cancelled → 查并发组是否又被 bot 自己的事件顶掉（手册 #10）。
 4. **测试期令牌纪律**：临时 `GH_PAT` secret 用完即删；验证 App 权限用
    JWT→installation token 现场铸（私钥不入库），绝不把令牌值写进任何日志。
 

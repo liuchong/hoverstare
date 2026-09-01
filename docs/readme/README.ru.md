@@ -231,7 +231,8 @@ HoverStare умеет и *разрабатывать* — issues и PR прев�
 ### Примечания
 
 - Команды может отдавать только коллаборатор репозитория; fork PR не поддерживаются.
-- CI для PR, созданных ботом, может требовать ручного одобрения (action_required) — зависит от политики Actions репозитория (first-time contributors).
+- CI для PR, созданных ботом, может показать **1 workflow awaiting approval**.
+  Это шлюз GitHub для maintainer (см. FAQ), а не отсутствующий ключ LLM.
 - Большие задачи делятся на бюджетные раунды; бот продолжается сам (максимум 10 раундов на PR). Он не может запускать сборку или тесты — падения CI передаются как инструкции следующему раунду.
 
 ## Частые вопросы
@@ -251,8 +252,23 @@ Endpoint принимает только температуру по умолч�
 **`@hoverstare merge` падает с 403?**
 Эндпоинт merge требует `contents: write`. Передайте PAT через `gh_pat` или выдайте GitHub App права Contents: Read and write (и примите обновление в установке).
 
-**CI на PR бота висит в action_required?**
-Это политика одобрения GitHub для внешних/новых контрибьюторов. Одобрите запуски один раз или ослабьте в Settings → Actions → General → Fork pull request workflows.
+**Жёлтая плашка «1 workflow awaiting approval» / проверки в action_required?**
+Это шлюз одобрения GitHub для workflow `pull_request`, а не ошибка HoverStare и
+не пропавший секрет.
+
+GitHub проверяет **и** автора PR, **и** актора события, запустившего run. PR
+открывает `hoverstare[bot]`; если следующий commit пушится **из workflow**
+(токен App в Actions), актор часто `github-actions[bot]`. У этого аккаунта
+никогда не мержили PR, поэтому политика по умолчанию («Require approval for
+first-time contributors») просит maintainer **на каждом таком push**.
+
+Обнаружить: `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
+Разблокировать: **Approve workflows to run** или
+`gh api -X POST repos/OWNER/REPO/actions/runs/RUN_ID/approve`.
+Предотвратить: PAT коллаборатора в `gh_pat`/`GH_PAT` для push (личность
+комментариев может остаться App); либо в Settings → Actions → General выбрать
+**Require approval for first-time contributors who are new to GitHub**.
+Не добавляйте workflow `pull_request_target` только чтобы автоодобрять другие run.
 
 **Раунд go/develop отвечает «нет изменений, PR не создан»?**
 Обычно задача слишком размыта для одного бюджетного раунда. Ответьте более точной и малой инструкцией (какие файлы трогать, критерии приёмки) и повторите `go` — в комментарии бота написано, что он реально сделал.
