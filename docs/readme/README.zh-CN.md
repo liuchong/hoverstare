@@ -248,7 +248,12 @@ HoverStare 会降级为线程内回复"✅ 已确认修复"。如需完整 resol
 **黄条 "1 workflow awaiting approval" / 检查停在 action_required？**
 这是 GitHub 对 `pull_request` workflow 的 maintainer 审批闸门，不是 HoverStare 的 bug，也不是缺密钥。
 
-GitHub 会同时检查 **PR 作者** 和 **触发这次 run 的 actor**。PR 是 `hoverstare[bot]` 开的；后续 commit 若是 **workflow 里 push** 的（Actions 里的 App token），触发 actor 经常是 `github-actions[bot]`。这个账号从未作为作者被 merge 过，所以默认策略（「Require approval for first-time contributors」）会在 **每一次这样的 push** 上要求 maintainer 点批准。
+GitHub 会同时检查 **PR 作者** 和 **触发这次 run 的 actor**。这是两个不同的 GitHub 账号：
+
+- 用 App 身份开 PR 时，作者是 `hoverstare[bot]`。这个 bot 只要已经有过被 merge 的 PR，以后它再开 PR，开 PR 那一次的 `pull_request` CI **不会** 亮黄条。
+- 后续 commit 若是 **workflow 里 push** 的（Actions 里的 App token），触发 actor 经常变成 `github-actions[bot]`。这是另一个账号，从未作为作者被 merge 过，所以默认策略（「Require approval for first-time contributors」）会在 **每一次这样的 push** 上再要一次批准。批准某一个 SHA 不会自动信任下一个 SHA。
+
+所以仓库里已经 merge 过 bot 的 PR，`continue` 轮仍可能停。只有一颗 commit 的 bot PR 只会碰到第一种（已经信任）。若配置了 secret `GH_PAT`，`git push` 是协作者，后续轮次不会亮闸门，GitHub 甚至可能把 PR 作者显示成该协作者。
 
 检测：
 

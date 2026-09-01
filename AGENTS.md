@@ -190,9 +190,13 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
    隐藏标记（m=plan/impl, r=轮次）、分支 commit 作者应为 hoverstare[bot]。
 3. **常见卡点对照**：
    - 黄条 **1 workflow awaiting approval** / run `conclusion=action_required`：
-     GitHub 的 `pull_request` maintainer 闸门。PR 作者是 `hoverstare[bot]`，但
-     workflow 里 push 的后续 commit 触发 actor 常为 `github-actions[bot]`（从未
-     作为作者被 merge），默认「首次贡献者须批准」会 **每 push 都停一次**。
+     GitHub 的 `pull_request` maintainer 闸门。**merge 过 `hoverstare[bot]` 的
+     PR 并不能消掉它**：那只信任 App 身份。开 PR 那一次 CI 的 triggering actor
+     是 `hoverstare[bot]`（已 merge 过则不拦）；workflow 里再 push 的后续
+     commit 触发 actor 常为另一个账号 `github-actions[bot]`（从未作为作者被
+     merge），默认「首次贡献者须批准」会 **每 push 都停一次**。
+     对照：只有一颗 commit 的 bot PR 不会碰到第二次；有 `GH_PAT` 时 push 是
+     协作者，continue 轮也不拦（PR 作者甚至会显示成协作者）。
      检测：`gh run list --json conclusion --jq '.[]|select(.conclusion=="action_required")'`。
      解开：PR 上 **Approve workflows to run**，或
      `gh api -X POST repos/<owner>/<repo>/actions/runs/<id>/approve`。

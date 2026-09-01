@@ -269,11 +269,13 @@ Es la puerta de aprobación de GitHub para workflows `pull_request`, no un fallo
 de HoverStare ni un secreto que falte.
 
 GitHub comprueba **tanto** el autor del PR **como** el actor del evento que
-arrancó el run. El PR lo abre `hoverstare[bot]`; si un commit posterior se
-empuja **desde un workflow** (token de App en Actions), el actor suele ser
-`github-actions[bot]`. Esa cuenta nunca ha mergeado un PR, así que la política
-por defecto («Require approval for first-time contributors») pide aprobación
-**en cada push de ese tipo**.
+arrancó el run. Son usuarios distintos: fusionar PRs de `hoverstare[bot]`
+confía esa identidad de App (abrir el PR ya no muestra el banner). Un commit
+posterior empujado **desde un workflow** suele atribuirse a
+`github-actions[bot]`, otra cuenta que nunca ha mergeado un PR, así que la
+política por defecto pide aprobación **en cada push de ese tipo**. Un PR de
+un solo commit no llega al segundo caso; con `GH_PAT`, el push es el
+colaborador y las rondas `continue` tampoco disparan la puerta.
 
 Detectar: `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
 Desbloquear: **Approve workflows to run**, o

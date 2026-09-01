@@ -271,11 +271,13 @@ Das ist GitHubs Freigabe-Tor für `pull_request`-Workflows, kein HoverStare-Fehl
 und kein fehlendes Secret.
 
 GitHub prüft **sowohl** den PR-Autor **als auch** den Actor des auslösenden
-Events. Den PR öffnet `hoverstare[bot]`; kommt ein späterer Commit **aus einem
-Workflow** (App-Token in Actions), ist der Actor oft `github-actions[bot]`.
-Dieses Konto hat nie einen PR gemerged, daher verlangt die Standardrichtlinie
-(„Require approval for first-time contributors“) bei **jedem solchen Push**
-eine Maintainer-Freigabe.
+Events. Das sind verschiedene Konten: gemergte `hoverstare[bot]`-PRs vertrauen
+nur der App-Identität (das Öffnen des PR zeigt das Banner nicht mehr). Ein
+späterer Commit **aus einem Workflow** wird oft `github-actions[bot]`
+zugeschrieben — ein anderes Konto ohne gemergten PR — daher verlangt die
+Standardrichtlinie die Freigabe bei **jedem solchen Push**. Ein Ein-Commit-PR
+trifft den zweiten Fall nicht; mit `GH_PAT` pusht der Collaborator, und
+`continue`-Runden lösen das Tor nicht aus.
 
 Erkennen: `gh run list --jq '.[]|select(.conclusion=="action_required")'`.
 Entsperren: **Approve workflows to run**, oder

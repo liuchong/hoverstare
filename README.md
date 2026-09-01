@@ -288,11 +288,22 @@ This is GitHub's maintainer-approval gate for `pull_request` workflows, not a
 HoverStare bug and not a missing secret.
 
 GitHub checks **both** the pull-request author and the **actor of the event
-that started the run**. The PR is opened as `hoverstare[bot]`. When a later
-commit is pushed **from a workflow** (GitHub App token inside Actions), the
-triggering actor is often `github-actions[bot]`. That account has never had a
-PR merged, so the default policy ("Require approval for first-time
-contributors") asks a maintainer to approve **on every such push**.
+that started the run**. Those are different GitHub users:
+
+- Opening the PR as `hoverstare[bot]` uses the App identity. Once a
+  `hoverstare[bot]` PR has been merged, later PRs opened by the same bot run
+  `pull_request` CI without this banner.
+- A later commit pushed **from a workflow** (App token inside Actions) is often
+  attributed to `github-actions[bot]`. That is a different account and has
+  never had a PR merged, so the default policy ("Require approval for
+  first-time contributors") asks a maintainer to approve **on every such
+  push**. Approving one SHA does not trust the next SHA.
+
+That is why a repo can already have merged bot PRs and still stop on
+`continue` rounds. Single-commit bot PRs only hit the first case (already
+trusted). If secret `GH_PAT` is set, `git push` is the collaborator, continue
+rounds skip the gate, and GitHub may even list that collaborator as the PR
+author.
 
 Detect:
 
