@@ -60,7 +60,9 @@ GitHub review 线程是扁平结构，`in_reply_to_id` 指向线程首条评论�
 行为：
 
 - 与 mention 命令相同的 reaction 约定（接单 🚀 / 成功 ✅ / 失败 ❌）；
-- 模型上下文 = 线程首条评论（finding）+ 用户消息 + 该评论的 `path`/`diff_hunk` 片段；
+- 模型上下文 = 线程首条评论（finding）+ 该评论的 `path`/`diff_hunk` 片段 +
+  线程内最近若干条回复（多轮记忆：时间序尾部窗口、整体截断、剥离隐藏标记，
+  触发评论本身不重复计入；历史拉取失败降级为无历史，不阻断主流程）+ 用户消息；
 - 回复**留在原线程**（`POST /pulls/{pr}/comments/{parent}/replies`），保持简洁；
 - 模型可以承认误报（false positive）、坚持原判并给出证据，或提出一个澄清问题；
   除非用户明确要求 dismiss，不得宣告线程 resolved；
