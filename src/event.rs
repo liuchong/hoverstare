@@ -23,6 +23,8 @@ pub struct MentionEvent {
     pub author_association: String,
     /// Login of the comment author (used by the permissions system, spec 12)
     pub author: String,
+    /// Comment author type ("User" | "Bot"); bot authors never trigger (spec 09)
+    pub user_type: String,
     /// In pull_request_review_comment events, the id of the comment being
     /// replied to (None for issue_comment)
     pub in_reply_to: Option<u64>,
@@ -35,6 +37,12 @@ impl MentionEvent {
             self.author_association.as_str(),
             "OWNER" | "MEMBER" | "COLLABORATOR"
         )
+    }
+
+    /// Bot authors never trigger (spec 09), including comments that contain
+    /// @hoverstare (self-excitation guard)
+    pub fn is_bot(&self) -> bool {
+        self.user_type.eq_ignore_ascii_case("bot")
     }
 
     pub fn in_reply_to_id(&self) -> Option<u64> {
@@ -70,6 +78,9 @@ struct MentionComment {
 #[derive(Debug, Deserialize)]
 struct EventUser {
     login: String,
+    /// "User" | "Bot" (mention-mode bot-author gate, spec 09)
+    #[serde(rename = "type", default)]
+    user_type: Option<String>,
 }
 
 /// Parse a mention event from the GitHub Actions environment (issue_comment / pull_request_review_comment)
@@ -102,6 +113,11 @@ pub fn resolve_mention() -> anyhow::Result<Option<MentionEvent>> {
                 .as_ref()
                 .map(|u| u.login.clone())
                 .unwrap_or_default(),
+            user_type: comment
+                .user
+                .as_ref()
+                .and_then(|u| u.user_type.clone())
+                .unwrap_or_else(|| "User".to_string()),
             in_reply_to: None,
         }));
     }
@@ -117,6 +133,11 @@ pub fn resolve_mention() -> anyhow::Result<Option<MentionEvent>> {
                 .as_ref()
                 .map(|u| u.login.clone())
                 .unwrap_or_default(),
+            user_type: comment
+                .user
+                .as_ref()
+                .and_then(|u| u.user_type.clone())
+                .unwrap_or_else(|| "User".to_string()),
             in_reply_to: comment.in_reply_to_id,
         }));
     }
