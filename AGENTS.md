@@ -205,10 +205,60 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
      轮仍记成 `github-actions[bot]`。fork-PR「只拦 GitHub 新账号」对这种同仓库
      Actions push **实测无效**。不要用 `pull_request_target` 自动批准。
    - push/merge 403 → 写令牌缺 contents:write；
+   - 推 `.github/workflows/*` 被拒（`GitHub App` + `workflows` permission）→
+     App 不能改 workflow 文件。人在网页编辑器提交到 PR 分支，或给 App 开
+     `workflows: write`。即便配了 `GH_PAT`，`actions/checkout` 默认
+     `persist-credentials` 会把 `http.extraheader` 设成 Actions 的 App
+     token，git 仍按 App 推，PAT 用不上；push 前清 extraheader，或
+     `persist-credentials: false`（须已合入 **默认分支**，因为
+     `issue_comment` 跑的是 master 上的 workflow）。
+   - develop 红了但 PR 上没有 bot 评论 → 多半是 3×600s timeout 或 push
+     失败，错误只在 Actions 日志。网页上要自己打开失败的 HoverStare
+     (dogfood) run。
    - "no changes" → 先看 warn 日志里的 agent 摘要和 budget_exhausted；
    - run 显示 cancelled → 查并发组是否又被 bot 自己的事件顶掉（手册 #10）。
+     连发两条 `@hoverstare` 会取消上一轮。
 4. **测试期令牌纪律**：临时 `GH_PAT` secret 用完即删；验证 App 权限用
    JWT→installation token 现场铸（私钥不入库），绝不把令牌值写进任何日志。
+
+## 7.6 网页闭环复盘（issue #13 / PR #14 dogfood）
+
+产品把 GitHub 网页当 IDE（spec 11）：issue/PR 评论 = 对话，Checks = 验证，
+bot 不主动去扫 CI。这次把「只坐在 github.com、不靠本机 CLI」能走多远测清楚了。
+
+**网页上本来就做得到、不必 CLI 的：**
+
+- 黄条 **Approve workflows to run**（PR Checks）。
+- CI 红了：打开失败 job → 复制 rustfmt/编译器 diff → 贴回 PR 评论给
+  `@hoverstare`（这就是设计内的人机分工；bot **没有** 读 Actions 日志的
+  工具，让它「自己去看 Checks」会空转到 timeout）。
+- 改 workflow 文件：GitHub 文件编辑器 commit 到 PR 分支（App 推不动 yml）。
+- 配 `GH_PAT`、改 Actions 审批策略：仓库 Settings。
+- 看 dogfood 红叉：Actions 页，不是 PR 对话。
+
+**网页上做得差、容易以为「停了」的：**
+
+- 每轮 Actions 推上来的 `pull_request` 都可能黄条（actor 是
+  `github-actions[bot]`，不是 `hoverstare[bot]`）。点批准能过，但不知道的人
+  会停在 Checks。fork-PR「只拦 GitHub 新账号」**挡不住**这种同仓库 push。
+- develop 超时/push 失败 **不在 PR 上留言**，对话链断了。
+- 连发指令会 cancel 正在跑的一轮。
+- `issue_comment` 用的是 **默认分支** 上的 workflow。PR 里改的 job `if`
+  要合进 master 之后，网页上的无 mention 线程回复才会按新规则跑。
+
+**当前单纯网页（只评论、不进 Settings/编辑器）做不到的：**
+
+| 缺口 | 原因 | 改进（值不值得） |
+|---|---|---|
+| 让 bot「自己打开失败的 check」 | 工具集只有仓库读写，没有 check run / job log | **值得**：只读工具，拉本 PR head 的失败 check 摘要（截断）。人仍可以说「CI 红了」，不必预读日志。不是自动修 CI，只是把 Checks 页读进对话。`list_check_runs` 已给 merge 用过。 |
+| fmt 红了只能手改或贴 diff | spec 11 不执行代码，没有 `cargo fmt` | **维持设计**。人贴 Checks 里的 rustfmt diff 即可。不要让模型猜 18 处格式。可选：独立 CI job 在 bot 之后自动 fmt（产品上要另开讨论，不是开发模式该偷做）。 |
+| bot 改不了 `.github/workflows/*` | GitHub：App 无 `workflows` 权限则拒推 | **两条都要**：文档写明「改 workflow 用网页编辑器」；代码上 push 前清 `http.https://github.com/.extraheader`，让已配的 `GH_PAT` 真正用于 push。给 App 开 `workflows: write` 能让身份仍是 bot，权限面更大。 |
+| PAT 配了仍报 GitHub App 拒推 workflow | checkout 的 extraheader 盖掉 remote URL 里的 PAT | **值得修**（上一条）。`persist-credentials: false` 已写在 PR #14 的 dogfood workflow，**合入 master 前对评论触发无效**。 |
+| 超时三次后对话里没有 bot | `develop failed` 直接让 step 失败 | **值得**：失败也 `create_issue_comment`（timeout / push rejected / 3 attempts），网页才能接着下指令。 |
+| 黄条没有人点就停 | 平台闸门 + Actions 推送 actor | **不要**用 `pull_request_target` 自动批准。网页点批准就够；要少点：`GH_PAT` 推送（须 extraheader 修复）或接受每轮点一次。推送成功后若 checks 为 `action_required`，**评论里提醒去点 Approve**（只读 checks API，App 能读）。 |
+| 评论里的引号弄坏 `xargs` | dogfood workflow 用 xargs 抽 `@hoverstare` 行 | **值得**：抽词不要走 xargs 默认引号规则。 |
+
+**结论：** 审查+开发的主路径（讨论 / go / 贴 CI / 再修 / merge）可以纯网页完成。这次多出来的 CLI 动作，大部分是「没在 PR 上留言、没清 git extraheader、没在网页编辑器改 yml」。真正要补进产品的是：**失败回评、可读失败 check 摘要、push 用 PAT 时不被 checkout 凭据覆盖**。不改「CI 红了不自动开修」这条产品边界。
 
 ## 8. 配置与秘钥管理
 
