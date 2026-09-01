@@ -203,6 +203,7 @@ Dans les commentaires d'une PR (collaborateurs du dépôt uniquement) :
 |---|---|
 | `@hoverstare review` | Force une re-revue complète |
 | `@hoverstare explain` | Répond dans le fil avec une explication en langage clair |
+| Répondre dans le fil d'une constat | Discuter de la constat avec HoverStare dans le fil — pas besoin de `@mention` |
 | `@hoverstare help` | Liste des commandes |
 
 ## Mode développement : issues et PR comme IDE IA

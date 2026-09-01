@@ -119,6 +119,10 @@ pub fn parse_event(event_type: &str, payload: &serde_json::Value) -> HookEvent {
                         .as_str()
                         .unwrap_or_default()
                         .to_string(),
+                    user_type: comment["user"]["type"]
+                        .as_str()
+                        .unwrap_or("User")
+                        .to_string(),
                     in_reply_to: None,
                 },
             })
@@ -128,12 +132,15 @@ pub fn parse_event(event_type: &str, payload: &serde_json::Value) -> HookEvent {
                 return HookEvent::Ignored;
             }
             let comment = &payload["comment"];
-            if !comment["body"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("@hoverstare")
-            {
-                return HookEvent::Ignored;
+            let body = comment["body"].as_str().unwrap_or_default();
+            let user_type = comment["user"]["type"].as_str().unwrap_or("User");
+            if !body.contains("@hoverstare") {
+                // No @mention: only finding-thread reply candidates (human
+                // author, in_reply_to present) go to the mention handler,
+                // which runs the cheap parent-marker check (issue #13, spec 09)
+                if user_type.eq_ignore_ascii_case("bot") || comment["in_reply_to_id"].is_null() {
+                    return HookEvent::Ignored;
+                }
             }
             HookEvent::Mention(MentionHookEvent {
                 installation_id,
@@ -141,7 +148,7 @@ pub fn parse_event(event_type: &str, payload: &serde_json::Value) -> HookEvent {
                     repo,
                     pr_number: payload["pull_request"]["number"].as_u64().unwrap_or(0),
                     comment_id: comment["id"].as_u64().unwrap_or(0),
-                    body: comment["body"].as_str().unwrap_or_default().to_string(),
+                    body: body.to_string(),
                     author_association: comment["author_association"]
                         .as_str()
                         .unwrap_or_default()
@@ -150,6 +157,7 @@ pub fn parse_event(event_type: &str, payload: &serde_json::Value) -> HookEvent {
                         .as_str()
                         .unwrap_or_default()
                         .to_string(),
+                    user_type: user_type.to_string(),
                     in_reply_to: comment["in_reply_to_id"].as_u64(),
                 },
             })
@@ -258,6 +266,106 @@ mod tests {
         });
         assert!(matches!(
             parse_event("issue_comment", &payload),
+            HookEvent::Ignored
+        ));
+    }
+
+    #[test]
+    fn parse_review_comment_with_command() {
+        let payload = serde_json::json!({
+            "action": "created",
+            "installation": {"id": 9},
+            "repository": {"full_name": "o/r"},
+            "pull_request": {"number": 3},
+            "comment": {
+                "id": 22,
+                "body": "@hoverstare explain",
+                "author_association": "MEMBER",
+                "in_reply_to_id": 9,
+                "user": {"login": "dev", "type": "User"}
+            }
+        });
+        match parse_event("pull_request_review_comment", &payload) {
+            HookEvent::Mention(ev) => {
+                assert_eq!(ev.mention.pr_number, 3);
+                assert_eq!(ev.mention.in_reply_to, Some(9));
+                assert!(!ev.mention.is_bot());
+            }
+            other => panic!("expected Mention, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_review_comment_thread_reply_without_command() {
+        // No @mention + human author + thread reply -> mention handler decides
+        // (finding-thread discussion candidate, issue #13)
+        let payload = serde_json::json!({
+            "action": "created",
+            "installation": {"id": 9},
+            "repository": {"full_name": "o/r"},
+            "pull_request": {"number": 3},
+            "comment": {
+                "id": 22,
+                "body": "are you sure? the pointer is checked above",
+                "author_association": "MEMBER",
+                "in_reply_to_id": 9,
+                "user": {"login": "dev", "type": "User"}
+            }
+        });
+        match parse_event("pull_request_review_comment", &payload) {
+            HookEvent::Mention(ev) => assert_eq!(ev.mention.comment_id, 22),
+            other => panic!("expected Mention, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_review_comment_without_command_ignored() {
+        // No @mention and not a thread reply -> ignored
+        let payload = serde_json::json!({
+            "action": "created",
+            "pull_request": {"number": 3},
+            "comment": {
+                "id": 22,
+                "body": "lgtm",
+                "author_association": "MEMBER",
+                "user": {"login": "dev", "type": "User"}
+            }
+        });
+        assert!(matches!(
+            parse_event("pull_request_review_comment", &payload),
+            HookEvent::Ignored
+        ));
+    }
+
+    #[test]
+    fn parse_review_comment_bot_reply_ignored() {
+        // Bot thread replies never enter the loop (self-excitation guard)
+        let payload = serde_json::json!({
+            "action": "created",
+            "pull_request": {"number": 3},
+            "comment": {
+                "id": 22,
+                "body": "thread discussion replied",
+                "author_association": "NONE",
+                "in_reply_to_id": 9,
+                "user": {"login": "hoverstare[bot]", "type": "Bot"}
+            }
+        });
+        assert!(matches!(
+            parse_event("pull_request_review_comment", &payload),
+            HookEvent::Ignored
+        ));
+    }
+
+    #[test]
+    fn parse_review_comment_non_created_ignored() {
+        let payload = serde_json::json!({
+            "action": "edited",
+            "pull_request": {"number": 3},
+            "comment": {"id": 22, "body": "@hoverstare explain", "in_reply_to_id": 9}
+        });
+        assert!(matches!(
+            parse_event("pull_request_review_comment", &payload),
             HookEvent::Ignored
         ));
     }

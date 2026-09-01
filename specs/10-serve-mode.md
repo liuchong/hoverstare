@@ -50,7 +50,7 @@ hoverstare serve [--port 8080]
 |---|---|---|
 | `pull_request` | action ∈ opened/reopened/synchronize | review（draft 按 config 跳过） |
 | `issue_comment` | action = created，评论含 `@hoverstare`，且 issue 是 PR | mention |
-| `pull_request_review_comment` | action = created，评论含 `@hoverstare` | mention |
+| `pull_request_review_comment` | action = created，评论含 `@hoverstare`；**或**无 mention 但 `in_reply_to_id` 存在且作者非 bot（finding 线程讨论候选，spec 09——父评论 finding marker 的廉价检查在 mention 处理器内完成） | mention |
 
 其余事件 → 200 + `"ignored"`。
 

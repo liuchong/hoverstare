@@ -188,6 +188,7 @@ HoverStare 会读取仓库级规则文件并应用到审查中（补充但永不
 |---|---|
 | `@hoverstare review` | 强制全量重审 |
 | `@hoverstare explain` | 在线程里通俗解释该发现 |
+| 在发现（finding）线程里直接回复 | 无需 `@mention`，即可在线程内与 HoverStare 讨论该发现 |
 | `@hoverstare help` | 命令列表 |
 
 ## 开发模式：把 issue 和 PR 当作 AI 编程 IDE

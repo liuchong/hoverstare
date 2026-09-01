@@ -24,7 +24,9 @@ permissions:
   statuses: write
 
 concurrency:
-  # 不含 @hoverstare 的评论事件给独立组名，避免无意义的 run 取消正在跑的审查
+  # 不含 @hoverstare 的评论事件给独立组名，避免无意义的 run 取消正在跑的审查；
+  # 无 mention 的 finding 线程回复（spec 09）也落在这个 noop 组：job 会运行，
+  # 但绝不取消正在进行的 review——这是有意为之的隔离，不要改
   group: >-
     hoverstare-${{
       (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment')
@@ -37,9 +39,14 @@ concurrency:
 jobs:
   hoverstare:
     runs-on: ubuntu-latest
+    # 最后一条：放行 finding 线程内的无 mention 人类回复（spec 09 线程讨论），
+    # 父评论是否为 finding 由二进制内的 marker 检查把关（廉价、无模型调用）
     if: >-
       github.event_name == 'pull_request' ||
-      contains(github.event.comment.body, '@hoverstare')
+      contains(github.event.comment.body, '@hoverstare') ||
+      (github.event_name == 'pull_request_review_comment' &&
+        github.event.comment.in_reply_to_id &&
+        github.event.comment.user.type != 'Bot')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,6 +85,8 @@ inputs：
    - `issue_comment` / `pull_request_review_comment` / `issues` 事件 → 先提取
      `@hoverstare` 后的命令关键字；若匹配 `review|explain|help|empty` 则
      `hoverstare mention`，否则 `hoverstare develop`；
+   - 无 mention 的 `pull_request_review_comment` 线程回复（命令关键字为空）同样
+     路由到 `mention`——finding 线程讨论（spec 09），永不进入 `develop`；
    - 路由实现需容忍 CJK 文本下 `grep` 未匹配的情况，避免崩溃或错路由；
 5. 透传 `GITHUB_TOKEN`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`；
    若提供 `gh_pat`，作为 `GH_PAT` 透传给 `develop` 子命令。

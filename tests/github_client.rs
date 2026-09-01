@@ -308,6 +308,7 @@ async fn reactions_use_correct_endpoints() {
         body: "@hoverstare review".into(),
         author_association: "OWNER".into(),
         author: "u".into(),
+        user_type: "User".into(),
         in_reply_to: None,
     };
     gh.create_reaction(&repo(), &ev_issue, "rocket")
@@ -339,6 +340,83 @@ async fn fetch_review_comment_body() {
     let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
     let body = gh.get_review_comment_body(&repo(), 9).await.unwrap();
     assert!(body.contains("空指针"));
+}
+
+/// 取线程评论的锚定信息 path/diff_hunk（finding 线程讨论上下文，issue #13）
+#[tokio::test]
+async fn fetch_review_comment_detail() {
+    let server = MockServer::start_async().await;
+    let m = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/repos/o/r/pulls/comments/9");
+            then.status(200).json_body(serde_json::json!({
+                "id": 9,
+                "body": "🟠 **HIGH**: 空指针 <!-- hoverstare-finding:0123456789abcdef -->",
+                "path": "src/a.rs",
+                "diff_hunk": "@@ -1,2 +1,2 @@\n-let x = 1;\n+let x = 2;",
+            }));
+        })
+        .await;
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    let detail = gh.get_review_comment(&repo(), 9).await.unwrap();
+    assert!(detail.body.contains("hoverstare-finding"));
+    assert_eq!(detail.path, "src/a.rs");
+    assert!(detail.diff_hunk.contains("+let x = 2;"));
+    m.assert_async().await;
+}
+
+/// 线程历史拉取：分页 + 只保留本线程评论 + 按 id 时间序（issue #13 多轮记忆）
+#[tokio::test]
+async fn list_review_thread_comments_filters_and_paginates() {
+    let server = MockServer::start_async().await;
+
+    // 第 1 页：恰好 100 条（触发继续翻页），其中 2 条属于线程 9
+    let page1: String = (0..100)
+        .map(|i| {
+            if i == 0 {
+                r#"{"id":9,"body":"finding","user":{"login":"hoverstare[bot]"},"in_reply_to_id":null}"#.to_string()
+            } else if i == 1 {
+                r#"{"id":10,"body":"first question","user":{"login":"alice"},"in_reply_to_id":9}"#.to_string()
+            } else {
+                format!(
+                    r#"{{"id":{},"body":"other thread","user":{{"login":"bob"}},"in_reply_to_id":{}}}"#,
+                    1000 + i,
+                    555
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let p1 = server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/repos/o/r/pulls/1/comments")
+                .query_param("page", "1");
+            then.status(200).body(format!("[{page1}]"));
+        })
+        .await;
+    let p2 = server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/repos/o/r/pulls/1/comments")
+                .query_param("page", "2");
+            then.status(200).json_body(serde_json::json!([
+                {"id": 12, "body": "bot answer", "user": {"login": "hoverstare[bot]"}, "in_reply_to_id": 9},
+                {"id": 11, "body": "follow up", "user": {"login": "alice"}, "in_reply_to_id": 9}
+            ]));
+        })
+        .await;
+
+    let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
+    let comments = gh.list_review_thread_comments(&repo(), 1, 9).await.unwrap();
+    p1.assert_async().await;
+    p2.assert_async().await;
+
+    // 只保留线程 9 的评论，且按 id 时间序（第 2 页的 11/12 被重新排序）
+    let ids: Vec<u64> = comments.iter().map(|c| c.id).collect();
+    assert_eq!(ids, vec![9, 10, 11, 12]);
+    assert_eq!(comments[1].author, "alice");
+    assert_eq!(comments[3].body, "bot answer");
 }
 
 /// mention 事件解析：issue_comment（PR）/ 纯 issue / review 线程回复

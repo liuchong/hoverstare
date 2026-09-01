@@ -136,6 +136,24 @@ pub struct ReviewThread {
     pub first_comment_body: String,
 }
 
+/// One review-thread comment with its anchoring info (context for the explain
+/// command and finding-thread discussions, spec 09)
+#[derive(Debug)]
+pub struct ReviewCommentDetail {
+    pub body: String,
+    pub path: String,
+    pub diff_hunk: String,
+}
+
+/// One reply inside a review thread (multi-turn history for finding-thread
+/// discussions, spec 09)
+#[derive(Debug)]
+pub struct ReviewThreadComment {
+    pub id: u64,
+    pub body: String,
+    pub author: String,
+}
+
 pub struct NewStatus {
     pub context: &'static str,
     pub state: StatusState,
@@ -531,12 +549,12 @@ impl GitHubClient {
             .await
     }
 
-    /// Fetch the body of a review thread comment (context for the explain command)
-    pub async fn get_review_comment_body(
+    /// Fetch a review thread comment with its anchoring info (path + diff hunk)
+    pub async fn get_review_comment(
         &self,
         repo: &Repo,
         comment_id: u64,
-    ) -> Result<String, GitHubError> {
+    ) -> Result<ReviewCommentDetail, GitHubError> {
         let url = format!(
             "{}/repos/{}/{}/pulls/comments/{comment_id}",
             self.api, repo.owner, repo.name
@@ -546,7 +564,63 @@ impl GitHubClient {
             .await?;
         let resp = Self::error_for_status(resp).await?;
         let body: serde_json::Value = resp.json().await?;
-        Ok(body["body"].as_str().unwrap_or_default().to_string())
+        Ok(ReviewCommentDetail {
+            body: body["body"].as_str().unwrap_or_default().to_string(),
+            path: body["path"].as_str().unwrap_or_default().to_string(),
+            diff_hunk: body["diff_hunk"].as_str().unwrap_or_default().to_string(),
+        })
+    }
+
+    /// Fetch the body of a review thread comment (context for the explain command)
+    pub async fn get_review_comment_body(
+        &self,
+        repo: &Repo,
+        comment_id: u64,
+    ) -> Result<String, GitHubError> {
+        Ok(self.get_review_comment(repo, comment_id).await?.body)
+    }
+
+    /// Fetch all comments of one review thread, chronological (multi-turn
+    /// history for finding-thread discussions, spec 09). GitHub review
+    /// threads are flat: the root has `id == root_id` and every reply has
+    /// `in_reply_to_id == root_id`.
+    pub async fn list_review_thread_comments(
+        &self,
+        repo: &Repo,
+        number: u64,
+        root_id: u64,
+    ) -> Result<Vec<ReviewThreadComment>, GitHubError> {
+        let mut out = Vec::new();
+        let mut page = 1u32;
+        loop {
+            let url = format!(
+                "{}/repos/{}/{}/pulls/{number}/comments?per_page=100&page={page}",
+                self.api, repo.owner, repo.name
+            );
+            let resp = self
+                .send(|| self.request(reqwest::Method::GET, &url))
+                .await?;
+            let resp = Self::error_for_status(resp).await?;
+            let batch: Vec<serde_json::Value> = resp.json().await?;
+            let done = batch.len() < 100;
+            for c in batch {
+                let id = c["id"].as_u64().unwrap_or_default();
+                if id != root_id && c["in_reply_to_id"].as_u64() != Some(root_id) {
+                    continue;
+                }
+                out.push(ReviewThreadComment {
+                    id,
+                    body: c["body"].as_str().unwrap_or_default().to_string(),
+                    author: c["user"]["login"].as_str().unwrap_or_default().to_string(),
+                });
+            }
+            if done {
+                break;
+            }
+            page += 1;
+        }
+        out.sort_by_key(|c| c.id);
+        Ok(out)
     }
 
     /// Fetch a user's collaborator permission level for this repo (spec 12).
