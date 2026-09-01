@@ -49,11 +49,15 @@ jobs:
       (github.event_name == 'issues' && contains(github.event.issue.body, '@hoverstare')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@hoverstare') && github.event.review.user.login != 'hoverstare[bot]') ||
       (contains(github.event.comment.body, '@hoverstare') &&
-        (github.event.comment.user.login != 'hoverstare[bot]' || startsWith(github.event.comment.body, '@hoverstare continue')))
+        (github.event.comment.user.login != 'hoverstare[bot]' || startsWith(github.event.comment.body, '@hoverstare continue'))) ||
+      (github.event_name == 'pull_request_review_comment' &&
+        github.event.comment.in_reply_to_id &&
+        github.event.comment.user.type != 'Bot')
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # show_base_file 需要 base 分支历史
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@stable
 
