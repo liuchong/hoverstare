@@ -7,12 +7,17 @@ use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::cli::ReviewArgs;
 use crate::config::{Actor, Config, PermissionKey};
 use crate::event::MentionEvent;
-use crate::github::{GitHubClient, Repo, ReviewCommentDetail};
+use crate::github::{GitHubClient, Repo, ReviewCommentDetail, ReviewThreadComment};
 use crate::i18n::T;
 use crate::orchestrator::{self, Outcome};
 
 /// Sentinel the model answers with to stay silent in a finding thread (spec 09)
 const NO_REPLY: &str = "[no-reply]";
+
+/// Thread history window for finding discussions (spec 09 multi-turn memory):
+/// last N replies, the whole rendered history capped at THREAD_MAX_BYTES
+const THREAD_TAIL: usize = 20;
+const THREAD_MAX_BYTES: usize = 8 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MentionCommand {
@@ -246,6 +251,24 @@ async fn do_thread_discussion(
     parent_id: u64,
     parent: &ReviewCommentDetail,
 ) -> anyhow::Result<Option<String>> {
+    // Multi-turn memory (spec 09): recent replies in the thread. A history
+    // fetch failure degrades to no history — it never blocks the main flow.
+    let history = match gh
+        .list_review_thread_comments(repo, ev.pr_number, parent_id)
+        .await
+    {
+        Ok(comments) => render_thread_history(&comments, parent_id, ev.comment_id),
+        Err(e) => {
+            tracing::warn!("thread history fetch failed, continuing without history: {e}");
+            String::new()
+        }
+    };
+    let mut user_prompt = format!("[Review finding]\n{}", thread_context(parent));
+    if !history.is_empty() {
+        user_prompt.push_str(&format!("\n\n[Thread history]\n{history}"));
+    }
+    user_prompt.push_str(&format!("\n\n[User reply]\n{}", ev.body));
+
     let backend = crate::agent::rig_backend::RigBackend::new(cfg.llm.clone());
     let shared: Arc<ToolShared> =
         ToolShared::new(cfg.workspace.clone(), "HEAD", cfg.max_tool_calls / 2);
@@ -260,11 +283,7 @@ async fn do_thread_discussion(
              and nothing else. Keep the reply under 200 words.",
             lang = cfg.language.display_name()
         ),
-        user_prompt: format!(
-            "[Review finding]\n{}\n\n[User reply]\n{}",
-            thread_context(parent),
-            ev.body
-        ),
+        user_prompt,
         tools: ToolRegistry {
             shared: Some(shared),
             ..Default::default()
@@ -306,6 +325,37 @@ fn thread_context(detail: &ReviewCommentDetail) -> String {
 /// The model stays silent by answering with the exact `[no-reply]` sentinel
 fn is_no_reply(text: &str) -> bool {
     text.trim() == NO_REPLY
+}
+
+/// Render recent thread replies for the model prompt (spec 09 multi-turn
+/// memory): chronological tail window, hidden markers stripped, overall
+/// truncation. The root finding (`root_id`, already in [Review finding]) and
+/// the triggering comment itself (`exclude_id`, the user message) are not
+/// repeated.
+fn render_thread_history(
+    comments: &[ReviewThreadComment],
+    root_id: u64,
+    exclude_id: u64,
+) -> String {
+    let replies: Vec<&ReviewThreadComment> = comments
+        .iter()
+        .filter(|c| c.id != root_id && c.id != exclude_id)
+        .collect();
+    let tail = if replies.len() > THREAD_TAIL {
+        &replies[replies.len() - THREAD_TAIL..]
+    } else {
+        &replies
+    };
+    let mut out = String::new();
+    for c in tail {
+        out.push_str(&format!("@{}: {}\n\n", c.author, crate::state::strip_markers(&c.body)));
+    }
+    let mut out = out.trim_end().to_string();
+    if out.len() > THREAD_MAX_BYTES {
+        out.truncate(THREAD_MAX_BYTES);
+        out.push_str("\n... [history truncated]");
+    }
+    out
 }
 
 /// `@hoverstare explain`: explain a finding (lightweight call, no multi-pass)
@@ -450,6 +500,29 @@ mod tests {
         assert!(!is_no_reply("[no-reply] but let me add context"));
         assert!(!is_no_reply("good point, this is a false positive"));
         assert!(!is_no_reply(""));
+    }
+
+    #[test]
+    fn thread_history_tail_window_markers_and_exclusions() {
+        let comments: Vec<ReviewThreadComment> = (1..=30)
+            .map(|i| ReviewThreadComment {
+                id: i,
+                body: format!("msg {i}\n<!-- hoverstare-finding:0123456789abcdef -->"),
+                author: format!("u{i}"),
+            })
+            .collect();
+        // root finding (id 1) and the triggering comment (id 30) are excluded
+        let out = render_thread_history(&comments, 1, 30);
+        assert!(!out.contains("msg 1\n"));
+        assert!(!out.contains("msg 30"));
+        assert!(!out.contains("hoverstare-finding"));
+        // tail window: only the last THREAD_TAIL replies survive (ids 10..=29)
+        assert!(!out.contains("msg 9\n"));
+        assert!(out.contains("@u10: msg 10"));
+        assert!(out.contains("@u29: msg 29"));
+
+        // no history -> empty string (the caller omits the history section)
+        assert_eq!(render_thread_history(&[], 1, 30), "");
     }
 
     #[test]
