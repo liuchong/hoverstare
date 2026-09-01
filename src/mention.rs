@@ -193,7 +193,7 @@ async fn run_thread_discussion(
         Err(e) => {
             return Ok(Outcome::Skipped(format!(
                 "parent comment fetch failed: {e}"
-            )))
+            )));
         }
     };
     if !parent.body.contains(crate::state::MARKER_PREFIX) {
