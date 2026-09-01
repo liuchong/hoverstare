@@ -408,10 +408,7 @@ async fn list_review_thread_comments_filters_and_paginates() {
         .await;
 
     let gh = GitHubClient::with_api_url(None, &server.base_url()).unwrap();
-    let comments = gh
-        .list_review_thread_comments(&repo(), 1, 9)
-        .await
-        .unwrap();
+    let comments = gh.list_review_thread_comments(&repo(), 1, 9).await.unwrap();
     p1.assert_async().await;
     p2.assert_async().await;
 

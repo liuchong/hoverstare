@@ -190,7 +190,11 @@ async fn run_thread_discussion(
     // fetch failure is also a skip — no model call either way
     let parent = match gh.get_review_comment(repo, parent_id).await {
         Ok(p) => p,
-        Err(e) => return Ok(Outcome::Skipped(format!("parent comment fetch failed: {e}"))),
+        Err(e) => {
+            return Ok(Outcome::Skipped(format!(
+                "parent comment fetch failed: {e}"
+            )))
+        }
     };
     if !parent.body.contains(crate::state::MARKER_PREFIX) {
         return Ok(Outcome::Skipped(
@@ -348,7 +352,11 @@ fn render_thread_history(
     };
     let mut out = String::new();
     for c in tail {
-        out.push_str(&format!("@{}: {}\n\n", c.author, crate::state::strip_markers(&c.body)));
+        out.push_str(&format!(
+            "@{}: {}\n\n",
+            c.author,
+            crate::state::strip_markers(&c.body)
+        ));
     }
     let mut out = out.trim_end().to_string();
     if out.len() > THREAD_MAX_BYTES {
