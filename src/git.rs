@@ -91,9 +91,11 @@ pub fn parse_identity(spec: &str) -> Option<Identity> {
 /// Resolve the commit contract for a develop round (spec 11 §3.3).
 ///
 /// `trigger` is the login of the instruction's author (the triggering comment,
-/// falling back to the issue/PR author); when it is missing every mode degrades
-/// to [`CommitAuthor::bot`]. `override_` is an explicit `Name <email>` from
-/// `commit_author` and only applies to the human (`author`/`coauthor`) modes.
+/// falling back to the issue/PR author); when it is missing — or is the bot
+/// itself, as in a self-triggered round — every mode degrades to
+/// [`CommitAuthor::bot`], never to an invented `<login>@users.noreply.github.com`
+/// author. `override_` is an explicit `Name <email>` from `commit_author` and
+/// only applies to the human (`author`/`coauthor`) modes.
 pub fn resolve_commit_identity(
     mode: CommitIdentity,
     trigger: Option<&str>,
@@ -102,7 +104,7 @@ pub fn resolve_commit_identity(
     let Some(trigger) = trigger.map(str::trim).filter(|t| !t.is_empty()) else {
         return CommitAuthor::bot();
     };
-    if mode == CommitIdentity::Bot {
+    if mode == CommitIdentity::Bot || trigger == BOT_NAME {
         return CommitAuthor::bot();
     }
     let author = override_
@@ -488,8 +490,32 @@ mod tests {
         let d = resolve_commit_identity(CommitIdentity::Author, Some("alice"), Some("nope"));
         assert_eq!(d.author.email, "alice@users.noreply.github.com");
         assert!(d.trailer.is_none());
-        assert!(parse_identity("nope").is_none());
+        // A self-triggered round (the bot's own `@hoverstare continue`) has no
+        // human trigger: bot identity, and no trailer crediting the bot itself.
+        assert_eq!(
+            resolve_commit_identity(CommitIdentity::Coauthor, Some("hoverstare[bot]"), None),
+            CommitAuthor::bot()
+        );
         assert_eq!(parse_identity("A B <a@b.c>").unwrap().name, "A B");
+    }
+
+    #[test]
+    fn parse_identity_rejects_malformed() {
+        // Valid: the `Name <email>` form, whitespace-tolerant.
+        let id = parse_identity(" Alice <alice@example.com> ").unwrap();
+        assert_eq!(id.name, "Alice");
+        assert_eq!(id.email, "alice@example.com");
+        // Malformed: no brackets, no email, empty email, empty name, unbalanced.
+        for bad in [
+            "alice@example.com",
+            "Alice alice@example.com",
+            "Alice <>",
+            "<alice@example.com>",
+            "Alice <alice@example.com",
+            "Alice alice@example.com>",
+        ] {
+            assert!(parse_identity(bad).is_none(), "accepted {bad:?}");
+        }
     }
 
     #[tokio::test]

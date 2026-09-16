@@ -126,7 +126,7 @@ impl From<SeverityToml> for Severity {
 }
 
 /// Develop-mode commit identity (spec 11 §3.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CommitIdentity {
     /// Author = the trigger (the human who gave the instruction)
@@ -134,13 +134,8 @@ pub enum CommitIdentity {
     /// Author = hoverstare[bot] (the historical behaviour)
     Bot,
     /// Author = the trigger, plus a `Co-authored-by: hoverstare[bot]` trailer
+    #[default]
     Coauthor,
-}
-
-impl Default for CommitIdentity {
-    fn default() -> Self {
-        Self::Coauthor
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -859,9 +854,10 @@ mod tests {
             c.commit_author.as_deref(),
             Some("Alice <alice@example.com>")
         );
-        // Invalid values are rejected.
+        // Invalid values are rejected; the message states the expected format.
         assert!(merge_str(r#"commit_identity = "nope""#).is_err());
-        assert!(merge_str(r#"commit_author = "no brackets""#).is_err());
+        let err = merge_str(r#"commit_author = "no brackets""#).unwrap_err();
+        assert!(err.to_string().contains(r#"expected "Name <email>""#), "{err:#}");
         // env beats toml (no other test asserts on this key, so a brief set_var is safe).
         unsafe { std::env::set_var("HOVERSTARE_COMMIT_IDENTITY", "author") };
         let c = merge_str(r#"commit_identity = "bot""#).unwrap();
