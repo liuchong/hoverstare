@@ -221,15 +221,17 @@ impl GitRepo {
     /// develops: on conflict the merge is aborted (the tree is left exactly as
     /// the human will find it) and reported as [`GitError::Conflict`].
     ///
-    /// The merge commit carries the same identity as the round's own commits:
-    /// a CI runner has no global git identity, and without one git refuses to
-    /// create the merge commit at all.
+    /// The merge commit takes the round's identity contract: its committer is
+    /// always hoverstare[bot] (the `author` still credits the trigger for the
+    /// round's own commits). A CI runner has no global git identity, and without
+    /// one git refuses to create the merge commit at all.
     pub async fn merge_ref(
         &self,
         reference: &str,
-        name: &str,
-        email: &str,
+        identity: &CommitAuthor,
     ) -> Result<(), GitError> {
+        let name = &identity.committer.name;
+        let email = &identity.committer.email;
         let identity_name = format!("user.name={name}");
         let identity_email = format!("user.email={email}");
         let out = tokio::process::Command::new("git")
@@ -411,17 +413,18 @@ mod tests {
     #[tokio::test]
     async fn merging_the_base_is_clean_or_aborts_without_touching_the_tree() {
         let (_d, repo) = fixture().await;
+        let identity = CommitAuthor::bot();
         // A clean side branch merges into the development branch.
         repo.run(&["checkout", "-q", "-b", "dev"]).await.unwrap();
         std::fs::write(repo.root().join("dev.txt"), "dev\n").unwrap();
         repo.add_all().await.unwrap();
-        repo.commit("dev work", "t", "t@t").await.unwrap();
+        repo.commit("dev work", &identity).await.unwrap();
         repo.run(&["checkout", "-q", "master"]).await.unwrap();
         std::fs::write(repo.root().join("base.txt"), "base\n").unwrap();
         repo.add_all().await.unwrap();
-        repo.commit("base work", "t", "t@t").await.unwrap();
+        repo.commit("base work", &identity).await.unwrap();
         repo.run(&["checkout", "-q", "dev"]).await.unwrap();
-        repo.merge_ref("master", "t", "t@t")
+        repo.merge_ref("master", &identity)
             .await
             .expect("clean merge");
         assert!(repo.root().join("base.txt").exists());
@@ -430,14 +433,14 @@ mod tests {
         // own work rather than a half-merged mess.
         std::fs::write(repo.root().join("a.txt"), "dev side\n").unwrap();
         repo.add_all().await.unwrap();
-        repo.commit("dev edits a", "t", "t@t").await.unwrap();
+        repo.commit("dev edits a", &identity).await.unwrap();
         repo.run(&["checkout", "-q", "master"]).await.unwrap();
         std::fs::write(repo.root().join("a.txt"), "master side\n").unwrap();
         repo.add_all().await.unwrap();
-        repo.commit("master edits a", "t", "t@t").await.unwrap();
+        repo.commit("master edits a", &identity).await.unwrap();
         repo.run(&["checkout", "-q", "dev"]).await.unwrap();
         let error = repo
-            .merge_ref("master", "t", "t@t")
+            .merge_ref("master", &identity)
             .await
             .expect_err("conflict");
         assert!(matches!(error, GitError::Conflict(_)), "{error:?}");

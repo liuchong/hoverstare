@@ -488,8 +488,7 @@ async fn pr_dev_round(
     match git
         .merge_ref(
             &format!("refs/remotes/devpush/{base}"),
-            crate::develop::AUTHOR_NAME,
-            crate::develop::AUTHOR_EMAIL,
+            &commit_identity_for(cfg, &ev.author),
         )
         .await
     {
