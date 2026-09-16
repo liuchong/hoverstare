@@ -18,5 +18,6 @@ pub mod orchestrator;
 pub mod pipeline;
 pub mod prompt;
 pub mod report;
+pub mod sanitize;
 pub mod serve;
 pub mod state;

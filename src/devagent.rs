@@ -23,8 +23,18 @@ use crate::mention::strip_code_blocks;
 
 /// Hidden state marker embedded in bot comments: `<!-- hoverstare-dev:{json} -->`.
 pub const MARKER_PREFIX: &str = "<!-- hoverstare-dev:";
-/// Self-trigger fuse: max dev rounds per PR (spec 11 §6).
+/// Self-trigger fuse: max **automatic** dev rounds per PR (spec 11 §6).
+///
+/// The fuse bounds a chain that drives itself. It must not bound a human: past
+/// the cap a person can still ask for rounds one at a time, otherwise a
+/// runaway chain would lock the maintainers out of their own pull request.
 pub const MAX_PR_ROUNDS: u32 = 10;
+
+/// Whether round `round` may run: human requests always may; the chain may not
+/// pass the fuse.
+pub fn round_allowed(round: u32, human: bool) -> bool {
+    human || round <= MAX_PR_ROUNDS
+}
 /// Thread context window: first post + last N comments.
 const THREAD_TAIL: usize = 30;
 const THREAD_MAX_BYTES: usize = 16 * 1024;
@@ -264,7 +274,11 @@ async fn discuss_round(
     gh.create_issue_comment(
         repo,
         ev.number,
-        &format!("{reply}\n\n{}", marker_text(&marker)),
+        &format!(
+            "{}\n\n{}",
+            crate::sanitize::model_text(reply),
+            marker_text(&marker)
+        ),
     )
     .await?;
     Ok(format!("discuss round {round} replied"))
@@ -348,9 +362,12 @@ async fn implement_issue(
         return Ok("no changes; PR not created".into());
     }
     git.push("devpush", &branch).await?;
+    // Untrusted model text: markup that failed as a tool call must not become a
+    // pull request body, where humans read it and later rounds inherit it.
+    let summary = crate::sanitize::model_text(&outcome.summary);
     let pr_body = format!(
         "{}\n\nCloses #{}\n\n---\n由 HoverStare 实现。后续调整请在 PR 评论区 `@hoverstare` 下达。",
-        outcome.summary, ev.number
+        summary, ev.number
     );
     let pr = gh
         .create_pull_request(
@@ -407,8 +424,19 @@ async fn pr_flow(
     match cmd {
         DevCommand::Merge => merge_flow(cfg, gh, repo, ev, &pr).await,
         DevCommand::Help => unreachable!("handled in run_event"),
-        DevCommand::Go => pr_dev_round(cfg, gh, repo, ev, &pr, "continue the current task").await,
-        DevCommand::Task(text) => pr_dev_round(cfg, gh, repo, ev, &pr, &text).await,
+        DevCommand::Go => {
+            pr_dev_round(
+                cfg,
+                gh,
+                repo,
+                ev,
+                &pr,
+                "continue the current task",
+                !ev.is_self_trigger(),
+            )
+            .await
+        }
+        DevCommand::Task(text) => pr_dev_round(cfg, gh, repo, ev, &pr, &text, true).await,
     }
 }
 
@@ -420,6 +448,7 @@ async fn pr_dev_round(
     ev: &DevEvent,
     pr: &PullRequest,
     instruction: &str,
+    human: bool,
 ) -> anyhow::Result<String> {
     let comments = gh.list_issue_comments(repo, ev.number).await?;
     let latest = latest_marker(&comments);
@@ -436,8 +465,9 @@ async fn pr_dev_round(
         // A newer run already completed this round: no comment, no commit, no
         // self-trigger — the run leaves the PR exactly as it found it.
         Some(Idle::StaleClaim) => return Ok("stale claim: nothing written".into()),
-        // Round cap: the pre-existing human-facing message.
-        Some(_) => {
+        // The round cap is the fuse for the automatic chain; a maintainer's
+        // request may still start a round (spec 11 §6).
+        Some(_) if !round_allowed(round, human) => {
             gh.create_issue_comment(
                 repo,
                 ev.number,
@@ -446,7 +476,7 @@ async fn pr_dev_round(
             .await?;
             return Ok("round cap reached".into());
         }
-        None => {}
+        Some(_) | None => {}
     }
 
     let git = GitRepo::open(&cfg.workspace)?;
@@ -514,7 +544,11 @@ async fn pr_dev_round(
     gh.create_issue_comment(
         repo,
         ev.number,
-        &format!("{head}\n\n{}\n\n{}", outcome.summary, marker_text(&marker)),
+        &format!(
+            "{head}\n\n{}\n\n{}",
+            crate::sanitize::model_text(&outcome.summary),
+            marker_text(&marker)
+        ),
     )
     .await?;
 
@@ -532,6 +566,18 @@ async fn pr_dev_round(
             "round {round} done; budget exhausted → self-triggered round {}",
             round + 1
         ));
+    }
+    // Say so when the fuse, not the work, is what stopped the chain: otherwise
+    // the thread just goes quiet and a reader cannot tell why.
+    if outcome.budget_exhausted && round >= MAX_PR_ROUNDS {
+        gh.create_issue_comment(
+            repo,
+            ev.number,
+            &format!(
+                "已达自动轮次上限（{MAX_PR_ROUNDS}），自动链在此停止；需要继续请人工下达指令。"
+            ),
+        )
+        .await?;
     }
     Ok(format!("round {round} done"))
 }
@@ -735,6 +781,17 @@ mod tests {
         assert_eq!(slug(""), "task");
         assert_eq!(slug("a".repeat(100).as_str()), "a".repeat(30));
         assert_eq!(slug("--weird--title--"), "weird-title");
+    }
+
+    #[test]
+    fn the_fuse_bounds_the_chain_but_never_a_person() {
+        // Rounds 1..=10 may run automatically; past that only a human request
+        // may start one, so a runaway chain cannot lock maintainers out.
+        assert!(round_allowed(1, false));
+        assert!(round_allowed(MAX_PR_ROUNDS, false));
+        assert!(!round_allowed(MAX_PR_ROUNDS + 1, false));
+        assert!(round_allowed(MAX_PR_ROUNDS + 1, true));
+        assert!(round_allowed(MAX_PR_ROUNDS + 50, true));
     }
 
     #[test]

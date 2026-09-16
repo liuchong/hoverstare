@@ -33,12 +33,15 @@ pub fn dev_system_prompt() -> String {
     "You are HoverStare, an AI developer working inside a repository checkout.\n\
      Your job: implement the user's task by editing files with the provided tools.\n\n\
      Rules:\n\
-     - Investigate before editing: read the files you will change and their callers.\n\
-     - Use edit_file for targeted changes (old_string must match exactly and uniquely);\n\
-     use write_file to create new files or rewrite whole files.\n\
+     - Work from the task, not from the repository: read the files the task names and\n\
+     their direct callers, and stop there. A task that fits one round should cost a\n\
+     handful of reads, not a survey of the codebase.\n\
+     - Use edit_file for targeted changes (edits[] entries match exactly and uniquely);\n\
+     use write_file to create new files or rewrite whole files it has read.\n\
      - Stay minimal and focused: implement the task, nothing more. Follow the repo's\n\
      existing style and conventions.\n\
-     - Do not touch files unrelated to the task. Never edit anything under .git/.\n\
+     - Do not touch files unrelated to the task. Never read or edit anything under\n\
+     `.git/`: branch, commit, push and merge state are handled by the harness for you.\n\
      - You cannot run builds or tests; write code that is correct by careful reading.\n\
      - When finished, reply with a concise summary: what changed, where, and why."
         .to_string()
@@ -120,6 +123,17 @@ pub async fn run(req: DevelopRequest<'_>) -> anyhow::Result<DevelopOutcome> {
                 tracing::warn!("develop: empty agent output (attempt {attempt}/{MAX_ATTEMPTS})");
                 // Keep as fallback; a later attempt may produce content.
                 run_opt = Some(run);
+            }
+            Err(crate::agent::AgentError::Timeout(budget)) => {
+                // A timeout means the model had its whole budget and did not
+                // finish. Retrying spends the same minutes on the same result
+                // while holding the concurrency group, so this stops here and
+                // says what the task needed.
+                tracing::warn!("develop: agent timed out after {budget:?}; not retrying");
+                return Err(anyhow::anyhow!(
+                    "agent timed out after {budget:?} without finishing the task; \
+                     split the task or raise the budget"
+                ));
             }
             Err(e) => {
                 tracing::warn!(

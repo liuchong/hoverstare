@@ -82,6 +82,9 @@ GITHUB_TOKEN 的 push 不触发 CI，会导致 checks 不跑、无法合并。
 - 写入后返回简短确认（路径 + 字节数），不回显全文（省 token）。
 - Budget 复用：`max_tool_calls` 对读+写统一计数；默认 implement 轮
   budget=40 次调用、timeout=10min。
+- **超时不重试**：一轮把整个预算用满仍没结束（`AgentError::Timeout`）时不换预算重跑——
+  同样的分钟数会得到同样的结果，还会一直占着并发组。直接失败并说明"拆分任务或提高预算"。
+  空输出/畸形响应仍然重试（3 次尝试，spec 04）。
 
 ## 5. Issue 主线
 
@@ -109,7 +112,8 @@ GITHUB_TOKEN 的 push 不触发 CI，会导致 checks 不跑、无法合并。
   PR diff 摘要、最近评论。
 - **自触发**：一轮 budget 耗尽但任务未完时，bot 通过 App token 自己发
   `@hoverstare continue` 评论启动下一轮；隐藏标记累计轮次，
-  **单 PR 上限 10 轮**，到顶回复人类接管。自触发评论是唯一豁免
+  **自动链单 PR 上限 10 轮**（到顶明确说明"自动链停止，继续请人工下令"），
+  但**人类指令不受该上限约束**——熔断是防失控的链，不是锁人的门。自触发评论是唯一豁免
   collaborator 校验的 bot 发言（判据：作者为 hoverstare[bot] 且正文恰好
   是该命令）；workflow 的 `if` 同步豁免它，其余 bot 评论一律不触发，
   防止自己的计划/汇报评论递归触发并打断在跑的 run。

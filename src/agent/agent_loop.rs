@@ -39,6 +39,9 @@ pub fn output_budget(window: u64) -> u64 {
     (window / 16).clamp(MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS_CEILING)
 }
 
+/// How many "that was a tool call, not an answer" replies in a row we tolerate.
+const TOOL_MARKUP_ATTEMPTS: u32 = 2;
+
 /// How many empty answers in a row are tolerated before the run fails.
 ///
 /// An empty reply is a real provider failure mode, not an exception: a
@@ -329,6 +332,7 @@ impl AgentLoop {
             let mut ledger = WorkLedger::from_items(&items);
             let mut rounds = 0u32;
             let mut empty_replies = 0u32;
+            let mut markup_replies = 0u32;
             let max_rounds = self.round_budget(req.budget.max_tool_calls);
             // Signature -> result of the last execution. A model that repeats a
             // call whose result cannot change would otherwise spend the budget
@@ -404,6 +408,14 @@ impl AgentLoop {
                     .await
                 {
                     Ok(reply) => {
+                        if reply.usage.input_tokens > 0 {
+                            debug!(
+                                "model call: {} input token(s), {} cached, {} output",
+                                reply.usage.input_tokens,
+                                reply.usage.cached_input_tokens,
+                                reply.usage.output_tokens
+                            );
+                        }
                         usage.add(reply.usage);
                         if reply.tool_calls.is_empty() {
                             if reply.text.trim().is_empty() {
@@ -425,6 +437,25 @@ impl AgentLoop {
                                 items.push(ConversationItem::User {
                                     text: "[note] your previous reply was empty. Answer now with \
                                            the required output and nothing else."
+                                        .to_string(),
+                                });
+                                continue;
+                            }
+                            if tools::looks_like_tool_markup(&reply.text, &specs) {
+                                markup_replies += 1;
+                                if markup_replies >= TOOL_MARKUP_ATTEMPTS {
+                                    break Err(AgentError::Backend(
+                                        "the model kept writing a tool call instead of answering"
+                                            .to_string(),
+                                    ));
+                                }
+                                warn!(
+                                    "model answered with tool markup instead of text; asking for prose"
+                                );
+                                items.push(ConversationItem::User {
+                                    text: "[note] that was a tool call written as text, not an \
+                                           answer. Tools are not available for this reply. Answer \
+                                           now in plain prose with what you already have."
                                         .to_string(),
                                 });
                                 continue;
@@ -590,6 +621,15 @@ impl AgentLoop {
                     Ok(()) => debug!("removed compaction dump {}", path.display()),
                     Err(e) => warn!("could not remove compaction dump {}: {e}", path.display()),
                 }
+            }
+            if let Some(ratio) = usage.cache_hit_ratio() {
+                info!(
+                    "run used {} input token(s) ({} cached, {:.0}%), {} output",
+                    usage.input_tokens,
+                    usage.cached_input_tokens,
+                    ratio * 100.0,
+                    usage.output_tokens
+                );
             }
             outcome.map(|(raw_output, tool_trace, usage)| ReviewRun {
                 raw_output,
@@ -1170,6 +1210,151 @@ mod tests {
             )),
             "the retry asks the model to answer"
         );
+    }
+
+    #[tokio::test]
+    async fn each_call_extends_the_previous_one_so_the_prefix_stays_cacheable() {
+        // A provider caches the longest shared prefix of consecutive requests.
+        // Rebuilding or reordering history between calls would throw that away
+        // and make every call pay full price for the conversation again.
+        let (_dir, shared) = two_file_workspace();
+        let client = ScriptedClient::new(vec![scripted(|index, _call| match index {
+            0 => Ok(tool_reply(
+                "1",
+                "read_file",
+                serde_json::json!({"path": "a.rs"}),
+            )),
+            1 => Ok(tool_reply(
+                "2",
+                "read_file",
+                serde_json::json!({"path": "b.rs"}),
+            )),
+            _ => Ok(reply("final")),
+        })]);
+        let run = loop_with(client.clone(), 100_000)
+            .review(request(Some(shared), 8))
+            .await
+            .unwrap();
+        assert_eq!(run.raw_output, "final");
+        let calls = client.calls();
+        assert!(calls.len() >= 3);
+        for pair in calls.windows(2) {
+            let (previous, next) = (&pair[0].messages, &pair[1].messages);
+            assert!(
+                next.len() >= previous.len(),
+                "history must grow, never shrink"
+            );
+            for (index, item) in previous.iter().enumerate() {
+                let same = match (item, &next[index]) {
+                    (
+                        ConversationItem::User { text: left },
+                        ConversationItem::User { text: right },
+                    ) => left == right,
+                    (
+                        ConversationItem::Assistant {
+                            tool_calls: left, ..
+                        },
+                        ConversationItem::Assistant {
+                            tool_calls: right, ..
+                        },
+                    ) => {
+                        left.len() == right.len()
+                            && left
+                                .iter()
+                                .zip(right)
+                                .all(|(l, r)| l.id == r.id && l.name == r.name)
+                    }
+                    (
+                        ConversationItem::ToolResult { call_id: left, .. },
+                        ConversationItem::ToolResult { call_id: right, .. },
+                    ) => left == right,
+                    _ => false,
+                };
+                assert!(same, "message {index} changed between calls");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn the_run_reports_what_the_provider_cached() {
+        let client = ScriptedClient::new(vec![Box::new(|_call, _| {
+            Ok(ChatReply {
+                text: "done".to_string(),
+                usage: Usage {
+                    input_tokens: 1_000,
+                    output_tokens: 20,
+                    cached_input_tokens: 750,
+                },
+                ..Default::default()
+            })
+        })]);
+        let run = loop_with(client.clone(), 100_000)
+            .review(request(None, 0))
+            .await
+            .unwrap();
+        assert_eq!(run.usage.cached_input_tokens, 750);
+        assert_eq!(run.usage.cache_hit_ratio(), Some(0.75));
+    }
+
+    #[tokio::test]
+    async fn a_tool_call_written_as_text_is_not_accepted_as_an_answer() {
+        let (_dir, shared) = two_file_workspace();
+        let counter = Arc::new(AtomicUsize::new(0));
+        let client = ScriptedClient::new(vec![scripted(move |_index, _call| {
+            if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Ok(reply("<read_file>\n<path>a.rs</path>\n</read_file>"));
+            }
+            Ok(reply("final"))
+        })]);
+        let run = loop_with(client.clone(), 100_000)
+            .review(request(Some(shared), 8))
+            .await
+            .unwrap();
+        assert_eq!(run.raw_output, "final");
+        let second = &client.calls()[1];
+        assert!(
+            second.messages.iter().any(|item| matches!(
+                item,
+                ConversationItem::User { text } if text.contains("written as text")
+            )),
+            "the model is told that markup is not an answer"
+        );
+    }
+
+    #[tokio::test]
+    async fn persistent_tool_markup_fails_the_run_instead_of_reporting_success() {
+        let (_dir, shared) = two_file_workspace();
+        let client = ScriptedClient::new(vec![scripted(|_index, _call| {
+            Ok(reply("<grep>\n<pattern>x</pattern>\n</grep>"))
+        })]);
+        let result = loop_with(client.clone(), 100_000)
+            .review(request(Some(shared), 8))
+            .await;
+        assert!(matches!(
+            result,
+            Err(AgentError::Backend(message)) if message.contains("tool call instead of answering")
+        ));
+    }
+
+    #[tokio::test]
+    async fn the_provider_specific_tool_dialect_is_not_an_answer_either() {
+        let (_dir, shared) = two_file_workspace();
+        let lt = '\u{3c}';
+        let gt = '\u{3e}';
+        let pipes = "\u{ff5c}\u{ff5c}DSML\u{ff5c}\u{ff5c}";
+        let markup = format!("{lt}{pipes}tool_calls{gt}{lt}{pipes}invoke name=\"grep\"{gt}");
+        let counter = Arc::new(AtomicUsize::new(0));
+        let client = ScriptedClient::new(vec![scripted(move |_index, _call| {
+            if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Ok(reply(&markup));
+            }
+            Ok(reply("final"))
+        })]);
+        let run = loop_with(client.clone(), 100_000)
+            .review(request(Some(shared), 8))
+            .await
+            .unwrap();
+        assert_eq!(run.raw_output, "final");
     }
 
     #[tokio::test]

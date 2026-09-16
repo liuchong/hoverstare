@@ -147,6 +147,20 @@ impl ToolShared {
                 _ => return Err(format!("invalid path: {rel}")),
             }
         }
+        // Repository state is the harness's business, not the model's: reading
+        // `.git/` costs a budget that is meant for source code, and a round that
+        // chases refs instead of editing files has already lost. Refused at the
+        // sandbox so no prompt has to be trusted for it.
+        if normalized
+            .components()
+            .next()
+            .is_some_and(|c| c.as_os_str() == ".git")
+        {
+            return Err(
+                "`.git/` is not readable: branch, commit and push state are handled for you"
+                    .to_string(),
+            );
+        }
         if normalized.as_os_str().is_empty() {
             return Err("empty path".to_string());
         }
@@ -960,6 +974,29 @@ fn parse_edits(arguments: &serde_json::Value) -> Result<Vec<(String, String)>, S
     Ok(edits)
 }
 
+/// Whether TEXT looks like a tool call written out instead of an answer.
+///
+/// Models do this when the tool menu is empty (the budget is spent): they keep
+/// asking for a tool in prose, wrapped in the provider's markup, and a loop
+/// that treats any text as a final answer will report a round that did nothing
+/// as if it had finished.
+pub fn looks_like_tool_markup(text: &str, specs: &[ToolSpec]) -> bool {
+    // The provider-specific dialect first: its separators are fullwidth, so an
+    // ASCII-only check walks straight past it.
+    const DSML_MARKER: &str = "\u{ff5c}\u{ff5c}DSML\u{ff5c}\u{ff5c}";
+    if text.contains(DSML_MARKER) {
+        return true;
+    }
+    let lowered = text.to_ascii_lowercase();
+    specs.iter().any(|spec| {
+        let name = spec.name.to_ascii_lowercase();
+        lowered.contains(&format!("<{name}"))
+            || lowered.contains(&format!("</{name}>"))
+            || lowered.contains(&format!("\"{name}\": {{"))
+    }) || lowered.contains("<function_call")
+        || lowered.contains("<tool_call")
+}
+
 /// Execute one tool call by name. Errors are returned as text, never as a
 /// failure: a tool problem must not break the agentic loop (spec 04).
 pub async fn dispatch(name: &str, arguments: &serde_json::Value, shared: &ToolShared) -> String {
@@ -1283,6 +1320,21 @@ mod tests {
         assert!(out.contains("edited"), "{out}");
         let content = std::fs::read_to_string(s.workspace().join("src/main.rs")).unwrap();
         assert!(content.contains("helper_three()"));
+    }
+
+    #[tokio::test]
+    async fn repository_internals_are_not_readable() {
+        let (_d, s) = setup();
+        std::fs::create_dir_all(s.workspace().join(".git/refs/heads")).unwrap();
+        std::fs::write(s.workspace().join(".git/refs/heads/master"), "deadbeef\n").unwrap();
+        let read = read_file(&s, ".git/refs/heads/master", None, None).await;
+        assert!(read.contains("not readable"), "{read}");
+        let edit = edit_file(&s, ".git/config", &[("a".to_string(), "b".to_string())]).await;
+        assert!(edit.contains("not readable"), "{edit}");
+        let written = write_file(&s, ".git/config", "x").await;
+        assert!(written.contains("not readable"), "{written}");
+        let globbed = glob(&s, ".git/**", None, None).await;
+        assert!(!globbed.contains("master"), "{globbed}");
     }
 
     #[tokio::test]
