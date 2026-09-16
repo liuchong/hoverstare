@@ -672,11 +672,7 @@ async fn pr_dev_round(
 
 /// `@hoverstare queue`: paste the visible queue checklist and carry the state
 /// forward as a new marker so the append-only chain stays consistent.
-async fn queue_flow(
-    gh: &GitHubClient,
-    repo: &Repo,
-    ev: &DevEvent,
-) -> anyhow::Result<String> {
+async fn queue_flow(gh: &GitHubClient, repo: &Repo, ev: &DevEvent) -> anyhow::Result<String> {
     let comments = gh.list_issue_comments(repo, ev.number).await?;
     let queue = QueueState::latest(&comments).unwrap_or_default();
     let body = if queue.items.is_empty() {
@@ -891,8 +887,14 @@ mod tests {
     #[test]
     fn parses_queue_command_case_and_spacing() {
         // Command words are case-insensitive and tolerate extra whitespace.
-        assert_eq!(parse_dev_command("@hoverstare queue"), Some(DevCommand::Queue));
-        assert_eq!(parse_dev_command("@hoverstare QUEUE"), Some(DevCommand::Queue));
+        assert_eq!(
+            parse_dev_command("@hoverstare queue"),
+            Some(DevCommand::Queue)
+        );
+        assert_eq!(
+            parse_dev_command("@hoverstare QUEUE"),
+            Some(DevCommand::Queue)
+        );
         assert_eq!(
             parse_dev_command("@hoverstare   Queue  "),
             Some(DevCommand::Queue)

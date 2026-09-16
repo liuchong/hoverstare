@@ -912,9 +912,13 @@ mod tests {
         assert_eq!(merge_gate(&queue, true), MergeGate::Forced { dropped: 1 });
 
         // Every open item (pending or running) counts toward the discard.
-        queue.enqueue(12, ItemKind::Human, "then update the docs").unwrap();
+        queue
+            .enqueue(12, ItemKind::Human, "then update the docs")
+            .unwrap();
         queue.set_state(12, ItemState::Running);
-        queue.enqueue(13, ItemKind::Human, "and the changelog").unwrap();
+        queue
+            .enqueue(13, ItemKind::Human, "and the changelog")
+            .unwrap();
         queue.set_state(13, ItemState::Done);
         assert_eq!(merge_gate(&queue, true), MergeGate::Forced { dropped: 2 });
 
