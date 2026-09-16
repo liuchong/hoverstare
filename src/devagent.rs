@@ -502,12 +502,54 @@ async fn pr_dev_round(
     // Artifact gate: when the previous round recorded the commit it pushed, that
     // commit must still be on the branch. A rewritten (force-pushed) branch would
     // make this round stack work on a history that no longer exists, so stop here.
+    // Checked before the base merge: a rewritten history is not something to
+    // build on, and the merge would move HEAD and hide the problem.
     if let Some(sha) = record.as_ref().and_then(|r| r.sha.as_deref())
         && !git.is_ancestor(sha, "HEAD").await?
     {
         gh.create_issue_comment(repo, ev.number, Idle::PreviousNotOnBranch.message())
             .await?;
         return Ok(format!("previous commit {sha} is not on {branch}"));
+    }
+
+    // Merge the base branch before developing. A branch that drifted behind its
+    // base turns the pull request conflicted, and GitHub then runs no
+    // `pull_request` checks at all: the round would develop with no CI and no
+    // failure to read. A clean merge is pushed immediately, so the pull request
+    // stays mergeable even when this round changes nothing else.
+    let base = &pr.base.ref_name;
+    git.fetch("devpush", &format!("{base}:refs/remotes/devpush/{base}"))
+        .await?;
+    let head_before = git.run(&["rev-parse", "HEAD"]).await?;
+    match git
+        .merge_ref(
+            &format!("refs/remotes/devpush/{base}"),
+            crate::develop::AUTHOR_NAME,
+            crate::develop::AUTHOR_EMAIL,
+        )
+        .await
+    {
+        Ok(()) => {
+            if git.run(&["rev-parse", "HEAD"]).await? != head_before {
+                git.push("devpush", branch).await?;
+                tracing::info!("dev round: merged {base} into {branch} before developing");
+            }
+        }
+        Err(crate::git::GitError::Conflict(detail)) => {
+            gh.create_issue_comment(
+                repo,
+                ev.number,
+                &format!(
+                    "⚠️ 分支 `{branch}` 与 `{base}` 冲突，本轮未开发。\n\n\
+                     冲突需要人工解决（bot 不做 rebase）：请把 `{base}` 合进分支或改掉冲突文件，\
+                     然后重新下达指令。\n\n<details><summary>git 输出</summary>\n\n```\n{}\n```\n</details>",
+                    detail.chars().take(1500).collect::<String>()
+                ),
+            )
+            .await?;
+            return Ok("conflict with base; round skipped".into());
+        }
+        Err(error) => return Err(error.into()),
     }
 
     let task = format!(
