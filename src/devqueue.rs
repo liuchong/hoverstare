@@ -436,16 +436,17 @@ pub fn precheck(
     claim: Option<u32>,
     latest: Option<&RoundRecord>,
 ) -> Option<Idle> {
-    if round > max_rounds {
-        return Some(Idle::RoundCap);
-    }
     // The claim guard turns the lossy "two runs race" into last-writer-wins:
     // if the newest completed round already reached the claimed one, this run
-    // is a leftover and must not touch anything.
+    // is a leftover and must not touch anything. It is checked *before* the cap
+    // so a superseded run stays silent even once the round limit is reached.
     if let (Some(claim), Some(latest)) = (claim, latest)
         && latest.r >= claim
     {
         return Some(Idle::StaleClaim);
+    }
+    if round > max_rounds {
+        return Some(Idle::RoundCap);
     }
     None
 }
@@ -674,18 +675,26 @@ mod tests {
 
     #[test]
     fn stale_claim_and_cap_are_prechecked() {
-        let latest = record(4, Some(Outcome::Ok), Some("s1"), Some(10));
+        // The self-trigger comment records the round just finished (`r`), so the
+        // run claims the next one: `latest.r` is the round this run would execute
+        // minus one, and any claim at or below it is already superseded.
+        let latest = record(5, Some(Outcome::Ok), Some("s1"), Some(10));
         assert_eq!(
-            precheck(5, 10, Some(5), Some(&latest)),
+            precheck(6, 10, Some(5), Some(&latest)),
             Some(Idle::StaleClaim)
         );
         assert_eq!(
-            precheck(5, 10, Some(4), Some(&latest)),
+            precheck(6, 10, Some(4), Some(&latest)),
             Some(Idle::StaleClaim)
         );
-        assert_eq!(precheck(5, 10, Some(6), Some(&latest)), None);
-        assert_eq!(precheck(5, 10, None, Some(&latest)), None, "no claim");
+        assert_eq!(precheck(6, 10, Some(6), Some(&latest)), None);
+        assert_eq!(precheck(6, 10, None, Some(&latest)), None, "no claim");
         assert_eq!(precheck(11, 10, None, Some(&latest)), Some(Idle::RoundCap));
+        // the claim wins over the cap: a superseded run must still stay silent
+        assert_eq!(
+            precheck(11, 10, Some(5), Some(&latest)),
+            Some(Idle::StaleClaim)
+        );
         assert!(Idle::StaleClaim.silent());
         assert!(!Idle::EmptyQueue.silent());
     }
@@ -797,14 +806,10 @@ mod tests {
             Err(QueueError::TooLong)
         );
         assert!(
-            fresh
-                .enqueue(1, ItemKind::Human, &"x".repeat(MAX_TEXT))
-                .is_ok()
-        );
-        assert!(
             fresh.items.is_empty(),
             "refused instructions are not queued"
         );
+        assert!(fresh.enqueue(1, ItemKind::Human, &"x".repeat(MAX_TEXT)).is_ok());
 
         for i in 0..(MAX_ITEMS as u64 - 1) {
             queue.enqueue(100 + i, ItemKind::Human, "t").unwrap();
