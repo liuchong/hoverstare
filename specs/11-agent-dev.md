@@ -70,6 +70,9 @@ GITHUB_TOKEN 的 push 不触发 CI，会导致 checks 不跑、无法合并。
   模式作者为下达指令的人类，`coauthor` 模式在 author 之上追加
   `Co-authored-by: hoverstare[bot]` trailer。无触发者、或触发者即 bot（自触发）
   时一律退化为 bot 身份，不臆造 `<login>@users.noreply.github.com` 作者。
+  人类作者默认取 `<login>@users.noreply.github.com`，可用 `commit_author` 的
+  `Name <email>` 显式覆盖。相应环境变量名 `HOVERSTARE_COMMIT_IDENTITY` /
+  `HOVERSTARE_COMMIT_AUTHOR`。优先级：env > toml > 默认 `coauthor`。
 - commit message：Conventional Commits，如
   `feat: <task summary> (hoverstare-dev #123)`。
 
@@ -177,11 +180,13 @@ GITHUB_TOKEN 的 push 不触发 CI，会导致 checks 不跑、无法合并。
 
 ## 8. 开放问题（spec 评审时定）
 
-1. commit 作者邮箱用什么（App 没有公开邮箱；可用
-   `hoverstare[bot]@users.noreply.github.com` 形式）。
+1. ~~commit 作者邮箱用什么~~ **已实现**（关闭）：bot 用
+   `hoverstare[bot]@users.noreply.github.com`，人类触发者用
+   `<login>@users.noreply.github.com`，可用 `commit_author` 覆盖（§3.3）。
 2. issue 首帖是否需要显式 @hoverstare 才启动，还是首帖即任务（倾向：
    首帖含 @ 才启动，避免误触发）。
-3. 分支命名 slug 规则（issue 标题前 30 字符 slug 化）。
+3. ~~分支命名 slug 规则~~ **已实现**（关闭）：`src/devagent.rs` 的 `slug`
+   取 issue 标题前 30 字符 slug 化，注释即 §8.3。
 
 ## 9. 里程碑
 
