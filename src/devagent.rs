@@ -14,7 +14,9 @@ use crate::agent::tools::ToolShared;
 use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::config::{Actor, Config, PermissionKey};
 use crate::develop::{self};
-use crate::devqueue::{Idle, QueueState, RoundRecord, checklist, precheck, summary_line};
+use crate::devqueue::{
+    Idle, QUEUE_PREFIX, QueueState, RoundRecord, checklist, precheck, summary_line,
+};
 use crate::event::{DevEvent, DevKind};
 use crate::git::GitRepo;
 use crate::github::{GitHubClient, IssueComment, PullRequest, Repo};
@@ -689,10 +691,13 @@ fn render_thread(title: &str, body: &str, comments: &[IssueComment]) -> String {
     };
     for c in tail {
         let body = c.body.as_deref().unwrap_or("");
-        // Skip the hidden markers to keep the context clean.
+        // Skip the hidden dev/queue markers to keep the context clean.
         let body = body
             .lines()
-            .filter(|l| !l.trim_start().starts_with(MARKER_PREFIX))
+            .filter(|l| {
+                let l = l.trim_start();
+                !l.starts_with(MARKER_PREFIX) && !l.starts_with(QUEUE_PREFIX)
+            })
             .collect::<Vec<_>>()
             .join("\n");
         out.push_str(&format!("\n**@{}:** {}\n", c.user.login, body));
@@ -841,5 +846,16 @@ mod tests {
         assert!(!out.contains("msg 0"));
         assert!(out.contains("msg 39"));
         assert!(!out.contains("hoverstare-dev:"), "markers stripped");
+    }
+
+    #[test]
+    fn thread_render_strips_queue_markers() {
+        let comments = vec![comment(
+            7,
+            &format!("please do it\n\n{}", QueueState::new().render()),
+        )];
+        let out = render_thread("T", "body", &comments);
+        assert!(out.contains("please do it"));
+        assert!(!out.contains(QUEUE_PREFIX), "queue marker stripped");
     }
 }
