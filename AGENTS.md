@@ -222,6 +222,15 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
 26. **bot 写的代码不过 fmt**：bot 不能执行代码，每轮都可能引入 rustfmt 偏差，
     不要让它逐条手改 18 处格式——人跑 `cargo fmt` 提一个 style commit 才是
     设计内的协作方式（人类可通过 commit 调整分支）。
+27. **自驱动队列的接线与验收**：人类 `@hoverstare <指令>` 是一条任务入队，经历
+    Running → Done/Failed 收尾。一轮结束时，只有"落地成功 + 队列还有活 + 未到轮次
+    上限"才自触发下一条（以 `@hoverstare continue` 评论启动），且**自触发只从队列取
+    任务、不带自由指令**；队列空（或已排空）**绝不**自触发，链在无人处静默终止。
+    `@hoverstare queue` 打印计数 + 清单，running 条目带上**来源评论 id 与首行摘要**，
+    每轮报告也带 `▶︎ 本轮执行 #<id> <摘要>` 一行（不再只有计数）。**PR 上肉眼验收**：
+    把两条指令**分别**发成两条评论，观察一次只跑一条、每轮报告点名本轮执行的那一条、
+    下一条以 `@hoverstare continue` 自触发带出——若一次跑两条或漏跑，先查并发组
+    （§7 #10）与 claim/gate（`devqueue::precheck` / `plan_round`）。
 
 ## 7.5 Dogfood 验证手册（开发模式端到端怎么测）
 
