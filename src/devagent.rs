@@ -89,9 +89,11 @@ pub enum DevCommand {
 }
 
 pub fn parse_dev_command(body: &str) -> Option<DevCommand> {
+    // Humans naturally quote earlier commands in the same comment, so the
+    // *newest* mention wins (issue #15). If that trailing mention carries no
+    // command text (a bare `@hoverstare`), fall back to the previous one.
     let stripped = strip_code_blocks(body);
-    let at = stripped.find("@hoverstare")?;
-    let after = stripped[at + "@hoverstare".len()..].trim();
+    let after = last_mention_tail(&stripped)?.trim();
     let first = after.split_whitespace().next().unwrap_or("").to_lowercase();
     Some(match first.as_str() {
         "go" => DevCommand::Go,
@@ -99,6 +101,29 @@ pub fn parse_dev_command(body: &str) -> Option<DevCommand> {
         "help" | "/help" => DevCommand::Help,
         _ => DevCommand::Task(after.to_string()),
     })
+}
+
+/// Text that follows the last `@hoverstare` mention in `stripped` (up to the
+/// next mention). A trailing mention with no command text falls back to the
+/// most recent mention that has one; `None` when there is no mention at all.
+fn last_mention_tail(stripped: &str) -> Option<&str> {
+    const MARKER: &str = "@hoverstare";
+    let mut last_any: Option<&str> = None;
+    let mut last_with_command: Option<&str> = None;
+    let mut rest = stripped;
+    while let Some(idx) = rest.find(MARKER) {
+        let after = &rest[idx + MARKER.len()..];
+        let tail = match after.find(MARKER) {
+            Some(next) => &after[..next],
+            None => after,
+        };
+        last_any = Some(tail);
+        if !tail.trim().is_empty() {
+            last_with_command = Some(tail);
+        }
+        rest = after;
+    }
+    last_with_command.or(last_any)
 }
 
 /// Branch name slug from an issue title (spec 11 §8.3).
@@ -807,6 +832,44 @@ mod tests {
         assert_eq!(
             parse_dev_command("@hoverstare /help"),
             Some(DevCommand::Help)
+        );
+    }
+
+    #[test]
+    fn uses_last_mention_with_fallback() {
+        // A command quoted in inline code followed by the real command: the
+        // trailing (last) mention is the one that is parsed.
+        assert_eq!(
+            parse_dev_command("之前我用了 `@hoverstare go`，现在 @hoverstare merge"),
+            Some(DevCommand::Merge)
+        );
+        // Two free-standing mentions -> the newest instruction wins.
+        assert_eq!(
+            parse_dev_command("@hoverstare go ... actually @hoverstare add tests"),
+            Some(DevCommand::Task("add tests".into()))
+        );
+        // A bare trailing mention carries no command -> fall back to the
+        // previous mention that does.
+        assert_eq!(
+            parse_dev_command("@hoverstare merge\n\n@hoverstare"),
+            Some(DevCommand::Merge)
+        );
+    }
+
+    #[test]
+    fn unpaired_backtick_does_not_hide_the_command() {
+        // Odd number of backticks: the stray one must not swallow the rest.
+        let body = "说明里有一个落单的反引号 ` 然后 @hoverstare go";
+        assert_eq!(parse_dev_command(body), Some(DevCommand::Go));
+        // The text after the stray backtick is preserved, not discarded.
+        assert!(strip_code_blocks(body).contains("然后 @hoverstare go"));
+
+        // No command anywhere -> None.
+        assert_eq!(parse_dev_command("just a normal comment"), None);
+        // A mention inside a fenced block is not a command.
+        assert_eq!(
+            parse_dev_command("示例：\n```\n@hoverstare go\n```\n没有命令"),
+            None
         );
     }
 
