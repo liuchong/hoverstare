@@ -14,7 +14,7 @@ use crate::agent::tools::ToolShared;
 use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::config::{Actor, Config, PermissionKey};
 use crate::develop::{self};
-use crate::devqueue::{Idle, RoundRecord, precheck};
+use crate::devqueue::{Idle, QueueState, RoundRecord, checklist, precheck, summary_line};
 use crate::event::{DevEvent, DevKind};
 use crate::git::GitRepo;
 use crate::github::{GitHubClient, IssueComment, PullRequest, Repo};
@@ -541,11 +541,19 @@ async fn pr_dev_round(
     } else {
         "本轮无代码改动。"
     };
+    // Queue status rides with the report so a human sees what is still pending
+    // or in flight without opening the queue command (spec 11 §6).
+    let queue = QueueState::latest(&comments).unwrap_or_default();
+    let queue_note = if queue.open_count() == 0 {
+        "队列已空".to_string()
+    } else {
+        summary_line(&queue)
+    };
     gh.create_issue_comment(
         repo,
         ev.number,
         &format!(
-            "{head}\n\n{}\n\n{}",
+            "{head}\n\n{}\n\n{queue_note}\n\n{}",
             crate::sanitize::model_text(&outcome.summary),
             marker_text(&marker)
         ),
@@ -595,6 +603,23 @@ async fn merge_flow(
         gh.create_issue_comment(repo, ev.number, "PR 未处于打开状态，无法合并。")
             .await?;
         return Ok("PR is not open".into());
+    }
+    // Queue gate (spec 11 §6): never merge while queued work is unfinished —
+    // those instructions would be lost. Paste the outstanding items verbatim so
+    // the refusal says what is left, not just that something is.
+    let comments = gh.list_issue_comments(repo, ev.number).await?;
+    let queue = QueueState::latest(&comments).unwrap_or_default();
+    if !queue.outstanding().is_empty() {
+        gh.create_issue_comment(
+            repo,
+            ev.number,
+            &format!(
+                "队列仍有未完成项，拒绝合并；请先执行或清理队列：\n\n{}",
+                checklist(&queue, &comments)
+            ),
+        )
+        .await?;
+        return Ok("refused: queue has unfinished items".into());
     }
     // `mergeable` is computed lazily by GitHub; refetch once if unknown.
     let mut mergeable = pr.mergeable;
