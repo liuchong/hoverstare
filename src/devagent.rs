@@ -1070,6 +1070,8 @@ mod tests {
             r: 2,
             pr: None,
             sha: Some("c0ffee".into()),
+            st: None,
+            task: None,
         };
         let text = marker_text(&m);
         assert_eq!(parse_marker(&format!("reply body\n\n{text}")), Some(m));
@@ -1081,6 +1083,8 @@ mod tests {
                     r: 1,
                     pr: None,
                     sha: None,
+                    st: None,
+                    task: None,
                 }),
             ),
             comment(2, "plain reply"),
@@ -1091,6 +1095,8 @@ mod tests {
                     r: 0,
                     pr: Some(7),
                     sha: None,
+                    st: None,
+                    task: None,
                 }),
             ),
         ];
@@ -1131,7 +1137,9 @@ mod tests {
                     m: "plan".into(),
                     r: 9,
                     pr: None,
-                    sha: None
+                    sha: None,
+                    st: None,
+                    task: None,
                 })
             ),
         ));
