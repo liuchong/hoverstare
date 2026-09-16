@@ -15,8 +15,8 @@ use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::config::{Actor, Config, PermissionKey};
 use crate::develop::{self};
 use crate::devqueue::{
-    Idle, ItemKind, ItemState, MergeGate, Outcome, QUEUE_PREFIX, QueueState, RoundRecord, checklist,
-    instruction, merge_gate, precheck, self_trigger, summary_line,
+    Idle, ItemKind, ItemState, MergeGate, Outcome, QUEUE_PREFIX, QueueState, RoundRecord,
+    checklist, instruction, merge_gate, precheck, self_trigger, summary_line,
 };
 use crate::event::{DevEvent, DevKind};
 use crate::git::GitRepo;
@@ -692,7 +692,14 @@ async fn pr_dev_round(
     // a round that produced nothing is failed — and a failure never releases the
     // next round. The final queue marker rides with the report (append-only).
     if src != 0 {
-        queue.set_state(src, if ok { ItemState::Done } else { ItemState::Failed });
+        queue.set_state(
+            src,
+            if ok {
+                ItemState::Done
+            } else {
+                ItemState::Failed
+            },
+        );
     }
     let marker = DevMarker {
         m: "impl".into(),
@@ -767,7 +774,11 @@ async fn queue_flow(gh: &GitHubClient, repo: &Repo, ev: &DevEvent) -> anyhow::Re
     let body = if queue.items.is_empty() {
         "队列已空".to_string()
     } else {
-        format!("{}\n\n{}", summary_line(&queue), checklist(&queue, &comments))
+        format!(
+            "{}\n\n{}",
+            summary_line(&queue),
+            checklist(&queue, &comments)
+        )
     };
     gh.create_issue_comment(repo, ev.number, &format!("{body}\n\n{}", queue.render()))
         .await?;
