@@ -550,6 +550,32 @@ pub fn checklist(queue: &QueueState, comments: &[IssueComment]) -> String {
     out
 }
 
+/// Verdict of the pre-merge queue gate (spec 11 §6). Pure so the rule is
+/// testable without I/O.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MergeGate {
+    /// Nothing unfinished: merge may proceed, nothing is discarded.
+    Clear,
+    /// Unfinished work and no `force`: refuse and show the checklist.
+    Blocked,
+    /// `force`: merge may proceed after discarding `dropped` unfinished items.
+    Forced { dropped: usize },
+}
+
+/// Decide whether `@hoverstare merge` may run (spec 11 §6). Refusing is the
+/// default; only a human `force` may throw queued instructions away, and the
+/// count is handed back so the discard is reported, never silent.
+pub fn merge_gate(queue: &QueueState, force: bool) -> MergeGate {
+    let open = queue.outstanding().len();
+    if open == 0 {
+        MergeGate::Clear
+    } else if force {
+        MergeGate::Forced { dropped: open }
+    } else {
+        MergeGate::Blocked
+    }
+}
+
 fn count(queue: &QueueState, state: ItemState) -> usize {
     queue.items.iter().filter(|i| i.state == state).count()
 }
@@ -868,5 +894,25 @@ mod tests {
             checklist(&QueueState::new(), &comments),
             "（队列为空）".to_string()
         );
+    }
+
+    #[test]
+    fn merge_gate_refuses_nonempty_queue_unless_forced() {
+        let comments = vec![comment(11, "@hoverstare add tests")];
+        let mut queue = QueueState::new();
+        queue.enqueue(11, ItemKind::Human, "add tests").unwrap();
+
+        // Outstanding work and no `force`: refuse, and the pasted checklist is
+        // non-empty so the refusal says what is still left.
+        assert_eq!(merge_gate(&queue, false), MergeGate::Blocked);
+        assert_ne!(checklist(&queue, &comments), "（队列为空）");
+        assert!(!checklist(&queue, &comments).is_empty());
+
+        // `force`: merge proceeds and reports how many items are discarded.
+        assert_eq!(merge_gate(&queue, true), MergeGate::Forced { dropped: 1 });
+
+        // Empty queue: unchanged, nothing is dropped either way.
+        assert_eq!(merge_gate(&QueueState::new(), false), MergeGate::Clear);
+        assert_eq!(merge_gate(&QueueState::new(), true), MergeGate::Clear);
     }
 }

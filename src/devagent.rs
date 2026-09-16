@@ -15,7 +15,8 @@ use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::config::{Actor, Config, PermissionKey};
 use crate::develop::{self};
 use crate::devqueue::{
-    Idle, QUEUE_PREFIX, QueueState, RoundRecord, checklist, precheck, summary_line,
+    Idle, ItemState, MergeGate, QUEUE_PREFIX, QueueState, RoundRecord, checklist, merge_gate,
+    precheck, summary_line,
 };
 use crate::event::{DevEvent, DevKind};
 use crate::git::GitRepo;
@@ -80,8 +81,8 @@ fn latest_marker(comments: &[IssueComment]) -> Option<DevMarker> {
 pub enum DevCommand {
     /// `@hoverstare go` (issue: implement the plan)
     Go,
-    /// `@hoverstare merge` (PR only)
-    Merge,
+    /// `@hoverstare merge` (PR only); `force` discards the unfinished queue.
+    Merge { force: bool },
     /// `@hoverstare help` or `@hoverstare /help`: print unified help
     Help,
     /// Everything else: discussion (issue) or dev instruction (PR)
@@ -97,7 +98,12 @@ pub fn parse_dev_command(body: &str) -> Option<DevCommand> {
     let first = after.split_whitespace().next().unwrap_or("").to_lowercase();
     Some(match first.as_str() {
         "go" => DevCommand::Go,
-        "merge" => DevCommand::Merge,
+        "merge" => DevCommand::Merge {
+            force: after
+                .split_whitespace()
+                .skip(1)
+                .any(|w| w.eq_ignore_ascii_case("force")),
+        },
         "help" | "/help" => DevCommand::Help,
         _ => DevCommand::Task(after.to_string()),
     })
@@ -171,7 +177,7 @@ pub async fn run_event(cfg: &Config, ev: &DevEvent) -> anyhow::Result<String> {
     // allowed (spec 11 §6); everything else is checked against the configured key.
     if !ev.is_self_trigger() {
         let key = match cmd {
-            DevCommand::Merge => PermissionKey::Merge,
+            DevCommand::Merge { .. } => PermissionKey::Merge,
             _ => PermissionKey::Develop,
         };
         let evaluator = cfg.permissions_evaluator();
@@ -218,7 +224,7 @@ async fn issue_flow(
     let comments = gh.list_issue_comments(repo, ev.number).await?;
     let marker = latest_marker(&comments);
     match cmd {
-        DevCommand::Merge => Ok("ignored: merge is only valid on PRs".to_string()),
+        DevCommand::Merge { .. } => Ok("ignored: merge is only valid on PRs".to_string()),
         DevCommand::Help => unreachable!("handled in run_event"),
         DevCommand::Go => implement_issue(cfg, gh, repo, ev, &comments, marker).await,
         DevCommand::Task(text) => {
@@ -449,7 +455,7 @@ async fn pr_flow(
         return Ok("rejected: PR head branch is not in this repo".into());
     }
     match cmd {
-        DevCommand::Merge => merge_flow(cfg, gh, repo, ev, &pr).await,
+        DevCommand::Merge { force } => merge_flow(cfg, gh, repo, ev, &pr, force).await,
         DevCommand::Help => unreachable!("handled in run_event"),
         DevCommand::Go => {
             pr_dev_round(
@@ -666,6 +672,7 @@ async fn merge_flow(
     repo: &Repo,
     ev: &DevEvent,
     pr: &PullRequest,
+    force: bool,
 ) -> anyhow::Result<String> {
     let _ = cfg;
     if pr.state.as_deref() != Some("open") {
@@ -674,22 +681,28 @@ async fn merge_flow(
         return Ok("PR is not open".into());
     }
     // Queue gate (spec 11 §6): never merge while queued work is unfinished —
-    // those instructions would be lost. Paste the outstanding items verbatim so
-    // the refusal says what is left, not just that something is.
+    // those instructions would be lost. Paste the outstanding items verbatim
+    // (`checklist`) so the refusal says what is left, not just that something is.
+    // A human `force` overrides the refusal, but the discard is reported aloud.
     let comments = gh.list_issue_comments(repo, ev.number).await?;
-    let queue = QueueState::latest(&comments).unwrap_or_default();
-    if !queue.outstanding().is_empty() {
-        gh.create_issue_comment(
-            repo,
-            ev.number,
-            &format!(
-                "队列仍有未完成项，拒绝合并；请先执行或清理队列：\n\n{}",
-                checklist(&queue, &comments)
-            ),
-        )
-        .await?;
-        return Ok("refused: queue has unfinished items".into());
-    }
+    let mut queue = QueueState::latest(&comments).unwrap_or_default();
+    let dropped = match merge_gate(&queue, force) {
+        MergeGate::Clear => 0,
+        MergeGate::Blocked => {
+            gh.create_issue_comment(
+                repo,
+                ev.number,
+                &format!(
+                    "队列仍有未完成项，拒绝合并；请先执行或清理队列\
+                     （确认丢弃可回复 `@hoverstare merge force`）：\n\n{}",
+                    checklist(&queue, &comments)
+                ),
+            )
+            .await?;
+            return Ok("refused: queue has unfinished items".into());
+        }
+        MergeGate::Forced { dropped } => dropped,
+    };
     // `mergeable` is computed lazily by GitHub; refetch once if unknown.
     let mut mergeable = pr.mergeable;
     if mergeable.is_none() {
@@ -732,14 +745,26 @@ async fn merge_flow(
         Ok(()) => format!("，源分支 `{}` 已删除", pr.head.ref_name),
         Err(e) => format!("（警告：源分支删除失败：{e}）"),
     };
+    // A forced merge throws the guarded instructions away: record them as dropped
+    // (append-only marker) so a later read no longer sees them as pending, and
+    // state the count in the confirmation so the discard is never silent.
+    let drop_note = if dropped > 0 {
+        let srcs: Vec<u64> = queue.outstanding().iter().map(|i| i.src).collect();
+        for src in srcs {
+            queue.set_state(src, ItemState::Dropped);
+        }
+        format!("\n\n已丢弃 {dropped} 条未完成项。\n\n{}", queue.render())
+    } else {
+        String::new()
+    };
     gh.create_issue_comment(
         repo,
         ev.number,
-        &format!("✅ 已合并（squash）：`{sha}`{branch_note}"),
+        &format!("✅ 已合并（squash）：`{sha}`{branch_note}{drop_note}"),
     )
     .await?;
     Ok(format!(
-        "merged: {sha}; branch deleted: {}",
+        "merged: {sha}; dropped {dropped} queued item(s); branch deleted: {}",
         pr.head.ref_name
     ))
 }
@@ -813,7 +838,11 @@ mod tests {
         assert_eq!(parse_dev_command("@hoverstare go"), Some(DevCommand::Go));
         assert_eq!(
             parse_dev_command("@hoverstare merge"),
-            Some(DevCommand::Merge)
+            Some(DevCommand::Merge { force: false })
+        );
+        assert_eq!(
+            parse_dev_command("@hoverstare merge force"),
+            Some(DevCommand::Merge { force: true })
         );
         assert_eq!(
             parse_dev_command("@hoverstare add tests for calc.py"),
@@ -841,7 +870,7 @@ mod tests {
         // trailing (last) mention is the one that is parsed.
         assert_eq!(
             parse_dev_command("之前我用了 `@hoverstare go`，现在 @hoverstare merge"),
-            Some(DevCommand::Merge)
+            Some(DevCommand::Merge { force: false })
         );
         // Two free-standing mentions -> the newest instruction wins.
         assert_eq!(
@@ -852,7 +881,7 @@ mod tests {
         // previous mention that does.
         assert_eq!(
             parse_dev_command("@hoverstare merge\n\n@hoverstare"),
-            Some(DevCommand::Merge)
+            Some(DevCommand::Merge { force: false })
         );
     }
 
