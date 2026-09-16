@@ -809,7 +809,11 @@ mod tests {
             fresh.items.is_empty(),
             "refused instructions are not queued"
         );
-        assert!(fresh.enqueue(1, ItemKind::Human, &"x".repeat(MAX_TEXT)).is_ok());
+        assert!(
+            fresh
+                .enqueue(1, ItemKind::Human, &"x".repeat(MAX_TEXT))
+                .is_ok()
+        );
 
         for i in 0..(MAX_ITEMS as u64 - 1) {
             queue.enqueue(100 + i, ItemKind::Human, "t").unwrap();
