@@ -14,6 +14,7 @@ use crate::agent::tools::ToolShared;
 use crate::agent::{AgentBackend, Budget, ReviewRequest, ToolRegistry};
 use crate::config::{Actor, Config, PermissionKey};
 use crate::develop::{self};
+use crate::devqueue::{Idle, RoundRecord, precheck};
 use crate::event::{DevEvent, DevKind};
 use crate::git::GitRepo;
 use crate::github::{GitHubClient, IssueComment, PullRequest, Repo};
@@ -36,6 +37,9 @@ pub struct DevMarker {
     pub r: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr: Option<u64>,
+    /// Commit pushed by this round (artifact gate of the next round).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha: Option<String>,
 }
 
 pub fn marker_text(marker: &DevMarker) -> String {
@@ -255,6 +259,7 @@ async fn discuss_round(
         m: "plan".into(),
         r: round,
         pr: None,
+        sha: None,
     };
     gh.create_issue_comment(
         repo,
@@ -360,6 +365,7 @@ async fn implement_issue(
         m: "impl".into(),
         r: 0,
         pr: Some(pr.number),
+        sha: None,
     };
     gh.create_issue_comment(
         repo,
@@ -416,16 +422,31 @@ async fn pr_dev_round(
     instruction: &str,
 ) -> anyhow::Result<String> {
     let comments = gh.list_issue_comments(repo, ev.number).await?;
-    let marker = latest_marker(&comments);
-    let round = marker.as_ref().map(|m| m.r).unwrap_or(0) + 1;
-    if round > MAX_PR_ROUNDS {
-        gh.create_issue_comment(
-            repo,
-            ev.number,
-            &format!("已达最大开发轮次（{MAX_PR_ROUNDS}），请人类接管。"),
-        )
-        .await?;
-        return Ok("round cap reached".into());
+    let latest = latest_marker(&comments);
+    let round = latest.as_ref().map(|m| m.r).unwrap_or(0) + 1;
+    // Queue guard (spec 11 §6): the marker as the queue sees it. A self-trigger
+    // comment carries the round it just finished, so it claims the next one; a
+    // human instruction claims nothing and always gets to run.
+    let record = latest.map(|m| RoundRecord {
+        r: m.r,
+        sha: m.sha,
+        ..Default::default()
+    });
+    match precheck(round, MAX_PR_ROUNDS, ev.claimed_round(), record.as_ref()) {
+        // A newer run already completed this round: no comment, no commit, no
+        // self-trigger — the run leaves the PR exactly as it found it.
+        Some(Idle::StaleClaim) => return Ok("stale claim: nothing written".into()),
+        // Round cap: the pre-existing human-facing message.
+        Some(_) => {
+            gh.create_issue_comment(
+                repo,
+                ev.number,
+                &format!("已达最大开发轮次（{MAX_PR_ROUNDS}），请人类接管。"),
+            )
+            .await?;
+            return Ok("round cap reached".into());
+        }
+        None => {}
     }
 
     let git = GitRepo::open(&cfg.workspace)?;
@@ -445,6 +466,16 @@ async fn pr_dev_round(
     // are on the remote, so nothing is ever overwritten (spec 11 §6).
     git.checkout_reset(branch, &format!("refs/remotes/devpush/{branch}"))
         .await?;
+
+    // Artifact gate: when the previous round recorded the commit it pushed, that
+    // commit must still be on the branch. A rewritten (force-pushed) branch would
+    // make this round stack work on a history that no longer exists, so stop here.
+    if let Some(sha) = record.as_ref().and_then(|r| r.sha.as_deref())
+        && !git.is_ancestor(sha, "HEAD").await?
+    {
+        gh.create_issue_comment(repo, ev.number, Idle::PreviousNotOnBranch.message()).await?;
+        return Ok(format!("previous commit {sha} is not on {branch}"));
+    }
 
     let task = format!(
         "You are developing on the branch `{branch}` of PR #{}.\n\n[Instruction from the PR discussion]\n{}\n\n\
@@ -472,6 +503,7 @@ async fn pr_dev_round(
         m: "impl".into(),
         r: round,
         pr: Some(ev.number),
+        sha: outcome.commit.clone(),
     };
     let head = if pushed {
         "本轮改动已提交并推送："
@@ -486,9 +518,15 @@ async fn pr_dev_round(
     .await?;
 
     // Self-trigger the next round when the budget cut the loop short (spec 11 §6).
+    // The comment rides with this round's marker (first line stays the command),
+    // so the next run knows which round it is claiming.
     if outcome.budget_exhausted && round < MAX_PR_ROUNDS {
-        gh.create_issue_comment(repo, ev.number, "@hoverstare continue")
-            .await?;
+        gh.create_issue_comment(
+            repo,
+            ev.number,
+            &format!("@hoverstare continue\n\n{}", marker_text(&marker)),
+        )
+        .await?;
         return Ok(format!(
             "round {round} done; budget exhausted → self-triggered round {}",
             round + 1
@@ -659,6 +697,7 @@ mod tests {
             m: "plan".into(),
             r: 2,
             pr: None,
+            sha: Some("c0ffee".into()),
         };
         let text = marker_text(&m);
         assert_eq!(parse_marker(&format!("reply body\n\n{text}")), Some(m));
@@ -669,6 +708,7 @@ mod tests {
                     m: "plan".into(),
                     r: 1,
                     pr: None,
+                    sha: None,
                 }),
             ),
             comment(2, "plain reply"),
@@ -678,6 +718,7 @@ mod tests {
                     m: "impl".into(),
                     r: 0,
                     pr: Some(7),
+                    sha: None,
                 }),
             ),
         ];
@@ -706,7 +747,8 @@ mod tests {
                 marker_text(&DevMarker {
                     m: "plan".into(),
                     r: 9,
-                    pr: None
+                    pr: None,
+                    sha: None
                 })
             ),
         ));
