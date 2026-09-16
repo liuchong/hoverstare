@@ -424,7 +424,7 @@ async fn pr_dev_round(
     let comments = gh.list_issue_comments(repo, ev.number).await?;
     let latest = latest_marker(&comments);
     let round = latest.as_ref().map(|m| m.r).unwrap_or(0) + 1;
-    // Queue guard (spec 11 §6): the marker as the queue sees it. A self-trigger
+    // Queue guardZZZ (spec 11 §6): the marker as the queue sees it. A self-trigger
     // comment carries the round it just finished, so it claims the next one; a
     // human instruction claims nothing and always gets to run.
     let record = latest.map(|m| RoundRecord {
