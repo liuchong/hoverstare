@@ -527,14 +527,14 @@ pub fn item_label(comments: &[IssueComment], src: u64) -> String {
 }
 
 /// One-line queue status appended to every round report. When an item is in
-/// flight it is named (id + snippet), so a human can tell *which* task runs and
-/// not just how many.
+/// flight the line names it (`正在跑：#<src> <first line>`), so a human can tell
+/// *which* task runs and not just how many.
 pub fn summary_line(queue: &QueueState, comments: &[IssueComment]) -> String {
     let pending = count(queue, ItemState::Pending);
     let running_count = count(queue, ItemState::Running);
     let failed = count(queue, ItemState::Failed);
     let tail = match running(queue) {
-        Some(item) => format!("；▶︎ 进行中 {}", item_label(comments, item.src)),
+        Some(item) => format!("；▶︎ 正在跑：{}", item_label(comments, item.src)),
         None => queue
             .next()
             .map(|i| format!("；下一轮 #{}", i.src))
@@ -927,7 +927,7 @@ mod tests {
             "{summary}"
         );
         // Counts alone are not enough: the in-flight item is named.
-        assert!(summary.contains("进行中 #11 add tests"), "{summary}");
+        assert!(summary.contains("正在跑：#11 add tests"), "{summary}");
         assert_eq!(
             checklist(&QueueState::new(), &comments),
             "（队列为空）".to_string()
@@ -949,18 +949,18 @@ mod tests {
         // Nothing running: the summary points at the next item instead.
         let idle = summary_line(&queue, &comments);
         assert!(idle.contains("下一轮 #11"), "{idle}");
-        assert!(!idle.contains("进行中 #"), "{idle}");
+        assert!(!idle.contains("正在跑"), "{idle}");
 
         // In flight: the summary names id + first-line snippet.
         queue.set_state(11, ItemState::Running);
         let busy = summary_line(&queue, &comments);
-        assert!(busy.contains("进行中 #11 add tests"), "{busy}");
+        assert!(busy.contains("正在跑：#11 add tests"), "{busy}");
 
         // A vanished source comment still renders the id.
         queue.set_state(11, ItemState::Done);
         queue.set_state(12, ItemState::Running);
         let gone = summary_line(&queue, &[]);
-        assert!(gone.contains("进行中 #12"), "{gone}");
+        assert!(gone.contains("正在跑：#12"), "{gone}");
     }
 
     #[test]
