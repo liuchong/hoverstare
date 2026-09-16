@@ -108,9 +108,8 @@ pub fn resolve_commit_identity(
     let author = override_
         .and_then(parse_identity)
         .unwrap_or_else(|| trigger_identity(trigger));
-    let trailer = (mode == CommitIdentity::Coauthor).then(|| {
-        format!("Co-authored-by: {BOT_NAME} <{BOT_EMAIL}>")
-    });
+    let trailer = (mode == CommitIdentity::Coauthor)
+        .then(|| format!("Co-authored-by: {BOT_NAME} <{BOT_EMAIL}>"));
     CommitAuthor {
         author,
         committer: bot_identity(),
@@ -336,7 +335,10 @@ mod tests {
         repo.checkout_new("feat-x", "master").await.unwrap();
         assert_eq!(repo.current_branch().await.unwrap(), "feat-x");
         assert!(!repo.has_changes().await.unwrap());
-        assert_eq!(repo.commit("nothing", &CommitAuthor::bot()).await.unwrap(), None);
+        assert_eq!(
+            repo.commit("nothing", &CommitAuthor::bot()).await.unwrap(),
+            None
+        );
 
         std::fs::write(repo.root().join("b.txt"), "two\n").unwrap();
         assert!(repo.has_changes().await.unwrap());
@@ -419,17 +421,30 @@ mod tests {
         let repo1 = GitRepo::open(c1.path()).unwrap();
         std::fs::write(c1.path().join("a.txt"), "three\n").unwrap();
         repo1.add_all().await.unwrap();
-        repo1.commit("conflicting", &CommitAuthor::bot()).await.unwrap();
+        repo1
+            .commit("conflicting", &CommitAuthor::bot())
+            .await
+            .unwrap();
         let err = repo1.pull_rebase().await.unwrap_err();
         assert!(matches!(err, GitError::Conflict(_)), "{err:?}");
     }
 
     async fn author_of(repo: &GitRepo) -> (String, String) {
-        split_identity(&repo.run(&["log", "-1", "--format=%an%x00%ae"]).await.unwrap())
+        split_identity(
+            &repo
+                .run(&["log", "-1", "--format=%an%x00%ae"])
+                .await
+                .unwrap(),
+        )
     }
 
     async fn committer_of(repo: &GitRepo) -> (String, String) {
-        split_identity(&repo.run(&["log", "-1", "--format=%cn%x00%ce"]).await.unwrap())
+        split_identity(
+            &repo
+                .run(&["log", "-1", "--format=%cn%x00%ce"])
+                .await
+                .unwrap(),
+        )
     }
 
     fn split_identity(raw: &str) -> (String, String) {
@@ -504,7 +519,9 @@ mod tests {
             }
             let body = commit_body(&repo).await;
             assert_eq!(
-                body.contains("Co-authored-by: hoverstare[bot] <hoverstare[bot]@users.noreply.github.com>"),
+                body.contains(
+                    "Co-authored-by: hoverstare[bot] <hoverstare[bot]@users.noreply.github.com>"
+                ),
                 want_trailer,
                 "{mode:?} trailer"
             );

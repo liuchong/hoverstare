@@ -855,7 +855,10 @@ mod tests {
         let c = merge_str(r#"commit_identity = "bot""#).unwrap();
         assert_eq!(c.commit_identity, CommitIdentity::Bot);
         let c = merge_str(r#"commit_author = "Alice <alice@example.com>""#).unwrap();
-        assert_eq!(c.commit_author.as_deref(), Some("Alice <alice@example.com>"));
+        assert_eq!(
+            c.commit_author.as_deref(),
+            Some("Alice <alice@example.com>")
+        );
         // Invalid values are rejected.
         assert!(merge_str(r#"commit_identity = "nope""#).is_err());
         assert!(merge_str(r#"commit_author = "no brackets""#).is_err());
