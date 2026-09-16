@@ -83,6 +83,8 @@ pub enum DevCommand {
     Go,
     /// `@hoverstare merge` (PR only); `force` discards the unfinished queue.
     Merge { force: bool },
+    /// `@hoverstare queue` (PR only): print the visible queue checklist
+    Queue,
     /// `@hoverstare help` or `@hoverstare /help`: print unified help
     Help,
     /// Everything else: discussion (issue) or dev instruction (PR)
@@ -104,6 +106,7 @@ pub fn parse_dev_command(body: &str) -> Option<DevCommand> {
                 .skip(1)
                 .any(|w| w.eq_ignore_ascii_case("force")),
         },
+        "queue" => DevCommand::Queue,
         "help" | "/help" => DevCommand::Help,
         _ => DevCommand::Task(after.to_string()),
     })
@@ -225,6 +228,7 @@ async fn issue_flow(
     let marker = latest_marker(&comments);
     match cmd {
         DevCommand::Merge { .. } => Ok("ignored: merge is only valid on PRs".to_string()),
+        DevCommand::Queue => Ok("invalid: queue is only valid on PRs".to_string()),
         DevCommand::Help => unreachable!("handled in run_event"),
         DevCommand::Go => implement_issue(cfg, gh, repo, ev, &comments, marker).await,
         DevCommand::Task(text) => {
@@ -456,6 +460,7 @@ async fn pr_flow(
     }
     match cmd {
         DevCommand::Merge { force } => merge_flow(cfg, gh, repo, ev, &pr, force).await,
+        DevCommand::Queue => queue_flow(gh, repo, ev).await,
         DevCommand::Help => unreachable!("handled in run_event"),
         DevCommand::Go => {
             pr_dev_round(
@@ -665,6 +670,25 @@ async fn pr_dev_round(
     Ok(format!("round {round} done"))
 }
 
+/// `@hoverstare queue`: paste the visible queue checklist and carry the state
+/// forward as a new marker so the append-only chain stays consistent.
+async fn queue_flow(
+    gh: &GitHubClient,
+    repo: &Repo,
+    ev: &DevEvent,
+) -> anyhow::Result<String> {
+    let comments = gh.list_issue_comments(repo, ev.number).await?;
+    let queue = QueueState::latest(&comments).unwrap_or_default();
+    let body = if queue.items.is_empty() {
+        "队列已空".to_string()
+    } else {
+        format!("📋 队列状态：\n\n{}", checklist(&queue, &comments))
+    };
+    gh.create_issue_comment(repo, ev.number, &format!("{body}\n\n{}", queue.render()))
+        .await?;
+    Ok(format!("queue reported ({} item(s))", queue.items.len()))
+}
+
 /// `@hoverstare merge`: gate on open + mergeable + checks green, then squash.
 async fn merge_flow(
     cfg: &Config,
@@ -861,6 +885,25 @@ mod tests {
         assert_eq!(
             parse_dev_command("@hoverstare /help"),
             Some(DevCommand::Help)
+        );
+    }
+
+    #[test]
+    fn parses_queue_command_case_and_spacing() {
+        // Command words are case-insensitive and tolerate extra whitespace.
+        assert_eq!(parse_dev_command("@hoverstare queue"), Some(DevCommand::Queue));
+        assert_eq!(parse_dev_command("@hoverstare QUEUE"), Some(DevCommand::Queue));
+        assert_eq!(
+            parse_dev_command("@hoverstare   Queue  "),
+            Some(DevCommand::Queue)
+        );
+        assert_eq!(
+            parse_dev_command("@hoverstare MERGE   FORCE"),
+            Some(DevCommand::Merge { force: true })
+        );
+        assert_eq!(
+            parse_dev_command("@hoverstare  merge"),
+            Some(DevCommand::Merge { force: false })
         );
     }
 
