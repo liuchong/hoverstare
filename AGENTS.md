@@ -113,7 +113,7 @@ crates/bugbot/         # 别名 crate：re-export + 同入口二进制（同步�
 
 ```bash
 cargo build --workspace
-cargo test --workspace                          # 217 项（单元 + httpmock 合约）
+cargo test --workspace                          # 218 项（单元 + httpmock 合约）
 cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
 ```
 
@@ -242,7 +242,13 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
     把两条指令**分别**发成两条评论，观察一次只跑一条、每轮报告点名本轮执行的那一条、
     下一条以 `@hoverstare continue` 自触发带出——若一次跑两条或漏跑，先查并发组
     （§7 #10）与 claim/gate（`devqueue::precheck` / `plan_round`）。
-31. **队列运维：入队去重、失败即停、自触发取 pending**：人类在 PR 上的每条
+31. **接线会悄悄关掉整条链路**：队列接线（PR #17）把轮末的条目状态写成"有没有提交"，于是每轮
+    都清空自己的条目、`self_trigger` 永不可达——**多轮续轮被静默关掉**（PR #20 之后再也见不到
+    `@hoverstare continue`，我起初还把它当成"测试覆盖不足"复述，直到真机复现才定位）。
+    修法（spec 11 §6 第 4 条）：条目按"任务是否真的完成"落位——预算耗尽但已有进展 → 保持 `pending`，
+    下一轮 `dequeue` 取回同一条继续做。教训：**改造既有机制的接线时，必须同时验证被它替代的旧条件
+    是否仍然可达**（原来决定续轮的是"预算耗尽"，不是"队列非空"）。
+32. **队列运维：入队去重、失败即停、自触发取 pending**：人类在 PR 上的每条
     `@hoverstare <指令>` 都**入队**并按**来源评论 id 去重**（同一条评论重放不
     重复入队）；本轮执行的条目开局置 `running`、结束按结果置 `done` / `failed`，
     **失败即停、不自动重试**。**自触发轮的任务取队列的下一个 pending 项**（不是
@@ -251,7 +257,7 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings
     `@hoverstare continue` 自触发带出。两个老坑会伪装成"队列没工作"：分支与 base
     冲突会**静默掐掉 CI**（开发轮已先合并 base，见 #24），以及 `.git/` 不给模型读
     （见 #16）——遇到"什么都没发生"先对照这两条。
-32. **流程级 pin 与提交身份约定**：两条 dogfood 欠账，代码已上线，文档见
+33. **流程级 pin 与提交身份约定**：两条 dogfood 欠账，代码已上线，文档见
     `specs/08-action-packaging.md` 的 dogfood/pin 小节。用途：**一条流程（issue → go → PR）
     从头到尾钉在同一个 revision 上**（`go` 时把当时的默认分支 revision 写成
     `<!-- hoverstare-pin: <sha> -->` 存进 PR body，后续每轮都构建它，同一版本还命中按 sha
