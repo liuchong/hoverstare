@@ -424,7 +424,7 @@ async fn pr_dev_round(
     let comments = gh.list_issue_comments(repo, ev.number).await?;
     let latest = latest_marker(&comments);
     let round = latest.as_ref().map(|m| m.r).unwrap_or(0) + 1;
-    // Queue guardZZZ (spec 11 §6): the marker as the queue sees it. A self-trigger
+    // Queue guard (spec 11 §6): the marker as the queue sees it. A self-trigger
     // comment carries the round it just finished, so it claims the next one; a
     // human instruction claims nothing and always gets to run.
     let record = latest.map(|m| RoundRecord {
@@ -473,7 +473,8 @@ async fn pr_dev_round(
     if let Some(sha) = record.as_ref().and_then(|r| r.sha.as_deref())
         && !git.is_ancestor(sha, "HEAD").await?
     {
-        gh.create_issue_comment(repo, ev.number, Idle::PreviousNotOnBranch.message()).await?;
+        gh.create_issue_comment(repo, ev.number, Idle::PreviousNotOnBranch.message())
+            .await?;
         return Ok(format!("previous commit {sha} is not on {branch}"));
     }
 

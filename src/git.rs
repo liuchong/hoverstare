@@ -82,7 +82,10 @@ impl GitRepo {
     /// make git exit non-zero, and both mean the same thing to the caller (the
     /// artifact gate): do not trust the recorded commit.
     pub async fn is_ancestor(&self, ancestor: &str, head: &str) -> Result<bool, GitError> {
-        match self.run(&["merge-base", "--is-ancestor", ancestor, head]).await {
+        match self
+            .run(&["merge-base", "--is-ancestor", ancestor, head])
+            .await
+        {
             Ok(_) => Ok(true),
             Err(GitError::Other(_)) => Ok(false),
             Err(e) => Err(e),
