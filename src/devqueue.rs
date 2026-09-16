@@ -241,17 +241,11 @@ impl QueueState {
 
     /// Items still to be worked on (drives `@hoverstare merge` refusal).
     pub fn outstanding(&self) -> Vec<&Item> {
-        self.items
-            .iter()
-            .filter(|i| i.state.is_open())
-            .collect()
+        self.items.iter().filter(|i| i.state.is_open()).collect()
     }
 
     pub fn open_count(&self) -> usize {
-        self.items
-            .iter()
-            .filter(|i| i.state.is_open())
-            .count()
+        self.items.iter().filter(|i| i.state.is_open()).count()
     }
 
     /// Dequeue order: the in-flight item first (self-triggered continuation),
@@ -307,9 +301,9 @@ impl QueueError {
                 "⚠️ 任务队列已满（未完成任务上限 {MAX_ITEMS} 条），本条指令未入队。\
                  请等待队列消化，或让人类清理队列后再下指令。"
             ),
-            QueueError::TooLong => format!(
-                "⚠️ 指令过长（上限 {MAX_TEXT} 字符），本条未入队；请拆成更小的任务。"
-            ),
+            QueueError::TooLong => {
+                format!("⚠️ 指令过长（上限 {MAX_TEXT} 字符），本条未入队；请拆成更小的任务。")
+            }
         }
     }
 }
@@ -526,7 +520,9 @@ pub fn summary_line(queue: &QueueState) -> String {
         .next()
         .map(|i| format!("；下一轮 #{}", i.src))
         .unwrap_or_default();
-    format!("📋 队列：{pending} 待执行 / {running} 进行中 / {failed} 失败（未完成上限 {MAX_ITEMS} 条）{next}")
+    format!(
+        "📋 队列：{pending} 待执行 / {running} 进行中 / {failed} 失败（未完成上限 {MAX_ITEMS} 条）{next}"
+    )
 }
 
 /// Full checklist (for `@hoverstare queue`); `→` marks the next round's item.
@@ -585,12 +581,7 @@ mod tests {
         }
     }
 
-    fn record(
-        r: u32,
-        st: Option<Outcome>,
-        sha: Option<&str>,
-        task: Option<u64>,
-    ) -> RoundRecord {
+    fn record(r: u32, st: Option<Outcome>, sha: Option<&str>, task: Option<u64>) -> RoundRecord {
         RoundRecord {
             r,
             st,
@@ -626,7 +617,10 @@ mod tests {
         queue.set_state(10, ItemState::Done);
         let text = queue.render();
         assert!(text.starts_with(QUEUE_PREFIX), "{text}");
-        assert_eq!(QueueState::parse(&format!("body\n\n{text}")), Some(queue.clone()));
+        assert_eq!(
+            QueueState::parse(&format!("body\n\n{text}")),
+            Some(queue.clone())
+        );
         assert_eq!(QueueState::parse("no marker here"), None);
 
         let comments = vec![
@@ -636,7 +630,8 @@ mod tests {
         ];
         assert_eq!(QueueState::latest(&comments), Some(QueueState::new()));
         // unknown enum values degrade instead of losing the whole queue
-        let odd = format!("{QUEUE_PREFIX}{{\"v\":1,\"items\":[{{\"src\":4,\"state\":\"weird\"}}]}} -->");
+        let odd =
+            format!("{QUEUE_PREFIX}{{\"v\":1,\"items\":[{{\"src\":4,\"state\":\"weird\"}}]}} -->");
         let parsed = QueueState::parse(&odd).unwrap();
         assert_eq!(parsed.items[0].state, ItemState::Pending);
         assert_eq!(parsed.items[0].kind, ItemKind::Human);
@@ -713,7 +708,14 @@ mod tests {
             RoundPlan::Idle(Idle::PreviousNotOnBranch)
         );
         assert_eq!(
-            plan_round(&request(2, Some(2), Some(&nochange), &queue, &comments, true)),
+            plan_round(&request(
+                2,
+                Some(2),
+                Some(&nochange),
+                &queue,
+                &comments,
+                true
+            )),
             RoundPlan::Idle(Idle::PreviousFailed)
         );
         // the gate only guards self-driving: a human command still runs
@@ -794,8 +796,15 @@ mod tests {
             fresh.enqueue(1, ItemKind::Human, &"x".repeat(MAX_TEXT + 1)),
             Err(QueueError::TooLong)
         );
-        assert!(fresh.enqueue(1, ItemKind::Human, &"x".repeat(MAX_TEXT)).is_ok());
-        assert!(fresh.items.is_empty(), "refused instructions are not queued");
+        assert!(
+            fresh
+                .enqueue(1, ItemKind::Human, &"x".repeat(MAX_TEXT))
+                .is_ok()
+        );
+        assert!(
+            fresh.items.is_empty(),
+            "refused instructions are not queued"
+        );
 
         for i in 0..(MAX_ITEMS as u64 - 1) {
             queue.enqueue(100 + i, ItemKind::Human, "t").unwrap();
@@ -832,7 +841,9 @@ mod tests {
         ];
         let mut queue = QueueState::new();
         queue.enqueue(11, ItemKind::Human, "add tests").unwrap();
-        queue.enqueue(12, ItemKind::Human, "then update the docs").unwrap();
+        queue
+            .enqueue(12, ItemKind::Human, "then update the docs")
+            .unwrap();
         queue.set_state(11, ItemState::Running);
         let out = checklist(&queue, &comments);
         assert!(out.contains("[~] #11"), "{out}");
@@ -840,7 +851,10 @@ mod tests {
         assert!(out.contains("add tests"), "{out}");
         assert!(out.contains("update the docs"), "{out}");
         let summary = summary_line(&queue);
-        assert!(summary.contains("进行中") && summary.contains("待执行"), "{summary}");
+        assert!(
+            summary.contains("进行中") && summary.contains("待执行"),
+            "{summary}"
+        );
         assert_eq!(
             checklist(&QueueState::new(), &comments),
             "（队列为空）".to_string()
