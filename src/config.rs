@@ -857,7 +857,10 @@ mod tests {
         // Invalid values are rejected; the message states the expected format.
         assert!(merge_str(r#"commit_identity = "nope""#).is_err());
         let err = merge_str(r#"commit_author = "no brackets""#).unwrap_err();
-        assert!(err.to_string().contains(r#"expected "Name <email>""#), "{err:#}");
+        assert!(
+            err.to_string().contains(r#"expected "Name <email>""#),
+            "{err:#}"
+        );
         // env beats toml (no other test asserts on this key, so a brief set_var is safe).
         unsafe { std::env::set_var("HOVERSTARE_COMMIT_IDENTITY", "author") };
         let c = merge_str(r#"commit_identity = "bot""#).unwrap();
